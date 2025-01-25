@@ -1,0 +1,77 @@
+# Start with the official ROS Humble ROS-Core image based on Ubuntu Jammy
+FROM ros:humble-ros-core-jammy
+
+SHELL ["/bin/bash", "-c"]
+
+# Install basic build tools and ROS2 development dependencies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    build-essential \
+    git \
+    python3-colcon-common-extensions \
+    python3-colcon-mixin \
+    python3-rosdep \
+    python3-vcstool \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set the ROS distro to Humble
+ENV ROS_DISTRO=humble
+
+# Initialize rosdep and update for the current ROS distro
+RUN rosdep init && \
+    rosdep update --rosdistro $ROS_DISTRO
+
+# Add and update colcon mixins and metadata
+RUN colcon mixin add default \
+    https://raw.githubusercontent.com/colcon/colcon-mixin-repository/master/index.yaml && \
+    colcon mixin update && \
+    colcon metadata add default \
+    https://raw.githubusercontent.com/colcon/colcon-metadata-repository/master/index.yaml && \
+    colcon metadata update
+
+# Install ROS2 base packages specific to Humble distribution
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-ros-base=0.10.0-1* \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables and source ROS2 Humble setup
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Source the ROS2 environment automatically when a new shell is created
+RUN echo "source /opt/ros/$ROS_DISTRO/setup.bash" >> ~/.bashrc
+RUN echo "source /root/ws/install/setup.bash" >> ~/.bashrc
+
+RUN mkdir -p /root/ws/src
+RUN mkdir -p /root/ws/tmp
+COPY . /root/ws/tmp
+
+WORKDIR /root/ws
+
+RUN sudo apt update
+
+# Install dev tools
+RUN apt-get update
+RUN apt-get install -y curl
+RUN curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+RUN cat /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+RUN echo $'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main\n' \
+    $'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy main\n' \
+    $'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main\n' \
+    $'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main\n' \
+    | tee -a /etc/apt/sources.list
+RUN apt-get update
+RUN apt-get install -y clang-format clang-format-19
+
+RUN source /opt/ros/$ROS_DISTRO/setup.bash \
+    && cd /root/ws \
+    && rosdep update \
+    && rosdep install --from-paths tmp -r -y
+
+RUN rm -rf /root/ws/tmp
+
+RUN source /opt/ros/$ROS_DISTRO/setup.bash \
+    && cd /root/ws \
+    && colcon build \
+    && git clone https://github.com/cornellev/cev_msgs.git src/cev_msgs
+
+EXPOSE 4567

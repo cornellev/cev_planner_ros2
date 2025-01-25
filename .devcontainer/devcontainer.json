@@ -1,0 +1,51 @@
+{
+    "name": "Planner Dev-Container",
+    "build": {
+        "dockerfile": "Dockerfile.dev"
+    },
+    "workspaceMount": "source=${localWorkspaceFolder},target=/root/ws/src/ackermann_kf,type=bind",
+    "workspaceFolder": "/root/ws/src/cev_planner",
+    "runArgs": [
+        "--rm",
+        "--network=host",
+        "--ipc=host",
+        "--privileged"
+    ],
+    "containerEnv": {
+        "DISPLAY": "${localEnv:DISPLAY}"
+    },
+    "mounts": [
+        "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind,consistency=cached"
+    ],
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+                "terminal.integrated.profiles.linux": {
+                    "bash": {
+                        "path": "/bin/bash"
+                    }
+                }
+            },
+            "[cpp]": {
+                "editor.defaultFormatter": "xaver.clang-format"
+            },
+            "[python]": {
+                "diffEditor.ignoreTrimWhitespace": false,
+                "gitlens.codeLens.symbolScopes": [
+                    "!Module"
+                ],
+                "editor.formatOnType": true,
+                "editor.wordBasedSuggestions": "off",
+                "editor.defaultFormatter": "ms-python.black-formatter"
+            },
+            "extensions": [
+                "ms-iot.vscode-ros",
+                "ms-vscode.cpptools-extension-pack",
+                "ms-python.black-formatter",
+                "xaver.clang-format"
+            ]
+        }
+    },
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}"
+}

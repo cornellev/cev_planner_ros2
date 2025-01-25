@@ -1,0 +1,3 @@
+[submodule "cev_planner"]
+	path = cev_planner
+	url = git@github.com:cornellev/cev_planner.git
