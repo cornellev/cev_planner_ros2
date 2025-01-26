@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(cev_localization LANGUAGES CXX)
+project(cev_planner_ros2 LANGUAGES CXX)
 
 # Set the C++ standard
 set(CMAKE_CXX_STANDARD 17)
@@ -23,9 +23,23 @@ include_directories(
 
 # Source files in the main src folder
 set(SOURCES
+    src/planner_node.cpp
+)
+
+add_executable(planner_node ${SOURCES})
+
+ament_target_dependencies(planner_node
+    rclcpp
+    cev_msgs
+)
+
+target_link_libraries(planner_node
+    cev_planner
 )
 
 # Declare the executable
+install(TARGETS planner_node
+    DESTINATION lib/${PROJECT_NAME})
 
 # Install additional resources
 install(DIRECTORY launch config
