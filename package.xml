@@ -11,6 +11,7 @@
 
   <depend>rclcpp</depend>
   <depend>eigen3</depend>
+  <depend>nlopt</depend>
 
   <depend>cev_msgs</depend>
 
