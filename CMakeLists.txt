@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(Eigen3 REQUIRED)
 
 # CEV
 find_package(cev_msgs REQUIRED)
@@ -33,6 +34,7 @@ ament_target_dependencies(planner_node
     rclcpp
     cev_msgs
     nav_msgs
+    Eigen3
 )
 
 target_link_libraries(planner_node

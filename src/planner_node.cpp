@@ -1,9 +1,11 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <eigen3/Eigen/Dense>
 
 #include <cev_msgs/msg/trajectory.hpp>
 #include <global_planning/rrt.h>
+#include <iostream>
 
 using namespace cev_planner;
 
@@ -19,7 +21,7 @@ public:
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
 
-        odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("odom", 1,
+        odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odometry/filtered", 1,
             std::bind(&PlannerNode::odom_callback, this, std::placeholders::_1));
 
         target_sub = this->create_subscription<cev_msgs::msg::Waypoint>("target", 1,
@@ -65,6 +67,8 @@ private:
         start = Pose{msg->pose.pose.position.x, msg->pose.pose.position.y, yaw};
         odom_initialized = true;
 
+        std::cout << start.x << " , " << start.y << " , " << yaw << std::endl;
+
         if (map_initialized && target_initialized) {
             Trajectory path = planner->plan_path(grid, start, target);
 
@@ -87,13 +91,14 @@ private:
         auto grid = Grid();
         grid.origin = Pose{msg->info.origin.position.x, msg->info.origin.position.y, 0};
         grid.resolution = msg->info.resolution;
-        grid.data = std::vector<std::vector<float>>(msg->info.width,
-            std::vector<float>(msg->info.height));
+
+        grid.data = Eigen::MatrixXd(msg->info.width, msg->info.height);
+
         for (int i = 0; i < msg->info.width; i++) {
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
                 // Unknown is -1
-                grid.data[i][j] = msg->data[i * msg->info.width + j] / 100.0;
+                grid.data(i, j) = msg->data[i * msg->info.width + j] / 100.0;
             }
         }
 
