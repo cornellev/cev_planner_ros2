@@ -272,7 +272,9 @@ void optimize_iter(nlopt::opt& opt, std::vector<double>& initial_input) {
 void plan() {
     int num_states = 10;
 
-    nlopt::opt opt(nlopt::LN_COBYLA, num_states * 2);
+    // nlopt::opt opt(nlopt::LN_COBYLA, num_states * 2);
+    // nlopt::opt opt(nlopt::LN_BOBYQA, num_states * 2);
+    nlopt::opt opt(nlopt::LN_NELDERMEAD, num_states * 2);
     opt.set_min_objective(objective_function, nullptr);
     opt.set_xtol_rel(1e-4);
 
@@ -312,19 +314,19 @@ void plan() {
 
     int num_iters = 0;
 
-    while (distance(path[path.size() - 1], waypoints[waypoints.size() - 1]) > 0.3) {
-        mid_time = std::chrono::high_resolution_clock::now();
+    while (distance(path[path.size() - 1], waypoints[waypoints.size() - 1]) > 0.5) {
+        // mid_time = std::chrono::high_resolution_clock::now();
         optimize_iter(opt, x);
         num_iters++;
-        end_time = std::chrono::high_resolution_clock::now();
+        // end_time = std::chrono::high_resolution_clock::now();
 
-        if (std::chrono::duration<double>(end_time - mid_time).count() > max_time) {
-            max_time = std::chrono::duration<double>(end_time - mid_time).count();
-        }
+        // if (std::chrono::duration<double>(end_time - mid_time).count() > max_time) {
+        //     max_time = std::chrono::duration<double>(end_time - mid_time).count();
+        // }
 
-        time_per_iter.push_back(std::chrono::duration<double>(end_time - mid_time).count());
-        std::cout << "Iteration time: "
-                  << std::chrono::duration<double>(end_time - mid_time).count() << std::endl;
+        // time_per_iter.push_back(std::chrono::duration<double>(end_time - mid_time).count());
+        // std::cout << "Iteration time: "
+        //           << std::chrono::duration<double>(end_time - mid_time).count() << std::endl;
 
         std::vector<State> new_path = decompose(path[path.size() - 1], x, bounds, dt, dims);
         // Keep only the first 2 states of the new path
@@ -355,20 +357,20 @@ void plan() {
             x.push_back(path[path.size() - 1].vel);
         }
 
-        plot_path(path, waypoints, obstacles);
+        // plot_path(path, waypoints, obstacles);
     }
 
     end_time = std::chrono::high_resolution_clock::now();
 
-    std::cout << "Max iteration time: " << max_time << std::endl;
+    // std::cout << "Max iteration time: " << max_time << std::endl;
     std::cout << "Avg iteration time: "
               << std::chrono::duration<double>(end_time - start_time).count() / num_iters
               << std::endl;
 
-    std::cout << "Time Per iter: " << std::endl;
-    for (int i = 0; i < time_per_iter.size(); i++) {
-        std::cout << time_per_iter[i] << std::endl;
-    }
+    // std::cout << "Time Per iter: " << std::endl;
+    // for (int i = 0; i < time_per_iter.size(); i++) {
+    // std::cout << time_per_iter[i] << std::endl;
+    // }
 
     plot_path(path, waypoints, obstacles);
 }
