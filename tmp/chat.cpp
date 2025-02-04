@@ -33,8 +33,8 @@ struct State {
 
 // Update step
 struct Input {
-    double dtau;
-    double accel;
+    double tau;
+    double vel;
 };
 
 double bound(double x, double bound[2]) {
@@ -49,8 +49,11 @@ double bound(double x, double bound[2]) {
 State update(State& x, Input& u, Bounds& bounds, double dt, Dimensions& dims) {
     State _x;
 
-    _x.vel = bound(x.vel + bound(u.accel, bounds.accel) * dt, bounds.vel);
-    _x.tau = bound(x.tau + bound(u.dtau, bounds.dtau) * dt, bounds.tau);
+    double accel = bound(u.vel - x.vel, bounds.accel);
+    double dtau = bound(u.tau - x.tau, bounds.dtau);
+
+    _x.vel = bound(x.vel + accel * dt, bounds.vel);
+    _x.tau = bound(x.tau + dtau * dt, bounds.tau);
 
     double avg_vel = (x.vel + _x.vel) / 2;
 
@@ -82,8 +85,8 @@ std::string to_string(State& x) {
 // INITIALIZE AS IF CLASS
 std::vector<State> waypoints = {
     {-1.0, -1.0, 0, 0, 0}, {1.0, 2.0, 0, 0, 0}, {3.0, 3.0, 0, 0, 0}};  // Waypoints
-// std::vector<std::vector<double>> obstacles = {{1, 1}, {2, 2}};         // Obstacle coordinates
-std::vector<std::vector<double>> obstacles = {};
+std::vector<std::vector<double>> obstacles = {{1, 1}, {2, 2}};         // Obstacle coordinates
+// std::vector<std::vector<double>> obstacles = {};
 
 std::vector<State> path = {waypoints[0]};
 
@@ -275,14 +278,20 @@ void plan() {
 
     // Set bounds
     std::vector<double> lb, ub;
+    // for (int i = 0; i < num_states; i++) {
+    //     lb.push_back(-M_PI / 8);
+    //     lb.push_back(-2);
+    //     ub.push_back(M_PI / 8);
+    //     ub.push_back(2);
+    // }
     for (int i = 0; i < num_states; i++) {
-        lb.push_back(-M_PI / 8);
-        lb.push_back(-2);
-        ub.push_back(M_PI / 8);
-        ub.push_back(2);
+        lb.push_back(-M_PI / 4);
+        lb.push_back(0);
+        ub.push_back(M_PI / 4);
+        ub.push_back(10);
     }
-    opt.set_lower_bounds(lb);
-    opt.set_upper_bounds(ub);
+    // opt.set_lower_bounds(lb);
+    // opt.set_upper_bounds(ub);
 
     std::vector<double> x = {};
     for (int i = 0; i < num_states; i++) {
@@ -342,7 +351,8 @@ void plan() {
         x.clear();
         for (int i = 0; i < num_states; i++) {
             x.push_back(0);
-            x.push_back(0);
+            // Push back final velocity
+            x.push_back(path[path.size() - 1].vel);
         }
 
         plot_path(path, waypoints, obstacles);
