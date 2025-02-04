@@ -81,9 +81,12 @@ std::string to_string(State& x) {
 
 // INITIALIZE AS IF CLASS
 std::vector<State> waypoints = {
-    {-1.0, -1.0, 0, 0, 0}, {1.0, 2.0, 0, 0, 0}, {3.0, 3.0, 0, 0, 0}};   // Waypoints
-std::vector<std::vector<double>> obstacles = {{1, 1}, {1, 2}, {2, 2}};  // Obstacle coordinates
-// std::vector<std::vector<double>> obstacles = {};
+    {-1.0, -1.0, 0, 0, 0}, {1.0, 2.0, 0, 0, 0}, {3.0, 3.0, 0, 0, 0}};  // Waypoints
+// std::vector<std::vector<double>> obstacles = {{1, 1}, {2, 2}};         // Obstacle coordinates
+std::vector<std::vector<double>> obstacles = {};
+
+std::vector<State> path = {waypoints[0]};
+
 Bounds bounds = {
     {-10, 10},              // x
     {-10, 10},              // y
@@ -119,6 +122,7 @@ double distance(const std::vector<double>& a, const std::vector<double>& b) {
 
 double path_obs_cost(std::vector<State>& path, std::vector<std::vector<double>>& obstacles) {
     double cost = 0;
+
     for (int i = 0; i < path.size(); i++) {
         for (int j = 0; j < obstacles.size(); j++) {
             cost += 1 / distance(path[i], obstacles[j]);
@@ -132,9 +136,9 @@ double path_waypoints_cost(std::vector<State>& path, std::vector<State>& waypoin
     double cost = 0;
     for (int i = 1; i < path.size(); i++) {
         // Waypoints
-        for (int j = 1; j < waypoints.size() - 1; j++) {
-            cost += .3 * distance(path[i], waypoints[j]);
-        }
+        // for (int j = 1; j < waypoints.size() - 1; j++) {
+        //     cost += .3 * distance(path[i], waypoints[j]);
+        // }
         // Goal
         cost += 2 * distance(path[i], waypoints[waypoints.size() - 1]);
     }
@@ -156,8 +160,8 @@ std::vector<State> decompose(State start_state, std::vector<double> u, Bounds& b
 
 // Objective function
 double objective_function(const std::vector<double>& x, std::vector<double>& grad, void* data) {
-    std::vector<State> path = decompose(waypoints[0], x, bounds, dt, dims);
-    double cost = path_obs_cost(path, obstacles) + path_waypoints_cost(path, waypoints);
+    std::vector<State> path_ = decompose(path[path.size() - 1], x, bounds, dt, dims);
+    double cost = path_obs_cost(path_, obstacles) + path_waypoints_cost(path_, waypoints);
 
     // std::cout << "Cost: " << cost << std::endl;
     // Path obs
@@ -257,6 +261,108 @@ void plot_path(const std::vector<State>& path, const std::vector<State>& waypoin
     plt::show();
 }
 
+void optimize_iter(nlopt::opt& opt, std::vector<double>& initial_input) {
+    double minf;
+    nlopt::result result = opt.optimize(initial_input, minf);
+}
+
+void plan() {
+    int num_states = 10;
+
+    nlopt::opt opt(nlopt::LN_COBYLA, num_states * 2);
+    opt.set_min_objective(objective_function, nullptr);
+    opt.set_xtol_rel(1e-4);
+
+    // Set bounds
+    std::vector<double> lb, ub;
+    for (int i = 0; i < num_states; i++) {
+        lb.push_back(-M_PI / 8);
+        lb.push_back(-2);
+        ub.push_back(M_PI / 8);
+        ub.push_back(2);
+    }
+    opt.set_lower_bounds(lb);
+    opt.set_upper_bounds(ub);
+
+    std::vector<double> x = {};
+    for (int i = 0; i < num_states; i++) {
+        x.push_back(0);
+        x.push_back(0);
+    }
+
+    std::vector<double> time_per_iter = {};
+
+    // std::vector<State> path = {waypoints[0]};
+
+    // Start time measurement
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto mid_time = std::chrono::high_resolution_clock::now();
+    auto end_time = std::chrono::high_resolution_clock::now();
+
+    double max_time = 0;
+
+    int num_iters = 0;
+
+    while (distance(path[path.size() - 1], waypoints[waypoints.size() - 1]) > 0.3) {
+        mid_time = std::chrono::high_resolution_clock::now();
+        optimize_iter(opt, x);
+        num_iters++;
+        end_time = std::chrono::high_resolution_clock::now();
+
+        if (std::chrono::duration<double>(end_time - mid_time).count() > max_time) {
+            max_time = std::chrono::duration<double>(end_time - mid_time).count();
+        }
+
+        time_per_iter.push_back(std::chrono::duration<double>(end_time - mid_time).count());
+        std::cout << "Iteration time: "
+                  << std::chrono::duration<double>(end_time - mid_time).count() << std::endl;
+
+        std::vector<State> new_path = decompose(path[path.size() - 1], x, bounds, dt, dims);
+        // Keep only the first 2 states of the new path
+        path.push_back(new_path[1]);
+        path.push_back(new_path[2]);
+
+        // Print cost
+        // std::cout << "Cost: " << objective_function(x, x, nullptr) << std::endl;
+
+        // Shift all inititial inputs left by two input sets
+        // x.erase(x.begin(), x.begin() + 4);
+        // // // Add two new input sets to the end
+        // x.push_back(0);
+        // x.push_back(0);
+        // x.push_back(0);
+        // x.push_back(0);
+
+        // std::cout << "Inputs: " << std::endl;
+        // for (int i = 0; i < x.size(); i += 2) {
+        //     std::cout << "dtau: " << x[i] << ", accel: " << x[i + 1] << std::endl;
+        // }
+
+        // Set all x to 0
+        x.clear();
+        for (int i = 0; i < num_states; i++) {
+            x.push_back(0);
+            x.push_back(0);
+        }
+
+        plot_path(path, waypoints, obstacles);
+    }
+
+    end_time = std::chrono::high_resolution_clock::now();
+
+    std::cout << "Max iteration time: " << max_time << std::endl;
+    std::cout << "Avg iteration time: "
+              << std::chrono::duration<double>(end_time - start_time).count() / num_iters
+              << std::endl;
+
+    std::cout << "Time Per iter: " << std::endl;
+    for (int i = 0; i < time_per_iter.size(); i++) {
+        std::cout << time_per_iter[i] << std::endl;
+    }
+
+    plot_path(path, waypoints, obstacles);
+}
+
 void optimize() {
     int num_states = 10;
 
@@ -312,6 +418,7 @@ void optimize() {
 }
 
 int main() {
-    optimize();
+    // optimize();
+    plan();
     return 0;
 }
