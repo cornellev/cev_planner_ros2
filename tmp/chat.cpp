@@ -84,8 +84,13 @@ std::string to_string(State& x) {
 
 // INITIALIZE AS IF CLASS
 std::vector<State> waypoints = {
-    {-1.0, -1.0, 0, 0, 0}, {1.0, 2.0, 0, 0, 0}, {3.0, 3.0, 0, 0, 0}};  // Waypoints
-std::vector<std::vector<double>> obstacles = {{1, 1}, {2, 2}};         // Obstacle coordinates
+    {-1.0, -1.0, 0, 0, 0}, {1.0, 2.0, 0, 0, 0}, {10.0, 10.0, 0, 0, 0}};  // Waypoints
+// std::vector<std::vector<double>> obstacles = {{1, 1}, {1, 2}, {2, 2}};  // Obstacle coordinates
+
+// 10 obstacles randomly placed
+std::vector<std::vector<double>> obstacles = {{1, 1}, {1, 2}, {2, 1}, {3, 4}, {4, 6.5}, {4, 7.5},
+    {4, 8.5}, {4, 9.5}, {4, 5}, {5, 4}, {6, 4}, {7, 8}, {8, 7}, {9, 10}};
+
 // std::vector<std::vector<double>> obstacles = {};
 
 std::vector<State> path = {waypoints[0]};
@@ -128,7 +133,7 @@ double path_obs_cost(std::vector<State>& path, std::vector<std::vector<double>>&
 
     for (int i = 0; i < path.size(); i++) {
         for (int j = 0; j < obstacles.size(); j++) {
-            cost += 1 / distance(path[i], obstacles[j]);
+            cost += 3 / distance(path[i], obstacles[j]);
             // std::cout << 1 / distance({path[i].x, path[i].y}, obstacles[j]) << std::endl;
         }
     }
@@ -139,9 +144,9 @@ double path_waypoints_cost(std::vector<State>& path, std::vector<State>& waypoin
     double cost = 0;
     for (int i = 1; i < path.size(); i++) {
         // Waypoints
-        // for (int j = 1; j < waypoints.size() - 1; j++) {
-        //     cost += .3 * distance(path[i], waypoints[j]);
-        // }
+        for (int j = 1; j < waypoints.size() - 1; j++) {
+            cost += .3 * distance(path[i], waypoints[j]);
+        }
         // Goal
         cost += 2 * distance(path[i], waypoints[waypoints.size() - 1]);
     }
@@ -275,6 +280,8 @@ void plan() {
     // nlopt::opt opt(nlopt::LN_COBYLA, num_states * 2);
     // nlopt::opt opt(nlopt::LN_BOBYQA, num_states * 2);
     nlopt::opt opt(nlopt::LN_NELDERMEAD, num_states * 2);
+    // nlopt::opt opt(nlopt::LN_SBPLX, num_states * 2);
+    // nlopt::opt opt(nlopt::LN_PRAXIS, num_states * 2);
     opt.set_min_objective(objective_function, nullptr);
     opt.set_xtol_rel(1e-4);
 
@@ -315,18 +322,18 @@ void plan() {
     int num_iters = 0;
 
     while (distance(path[path.size() - 1], waypoints[waypoints.size() - 1]) > 0.5) {
-        // mid_time = std::chrono::high_resolution_clock::now();
+        mid_time = std::chrono::high_resolution_clock::now();
         optimize_iter(opt, x);
         num_iters++;
-        // end_time = std::chrono::high_resolution_clock::now();
+        end_time = std::chrono::high_resolution_clock::now();
 
-        // if (std::chrono::duration<double>(end_time - mid_time).count() > max_time) {
-        //     max_time = std::chrono::duration<double>(end_time - mid_time).count();
-        // }
+        if (std::chrono::duration<double>(end_time - mid_time).count() > max_time) {
+            max_time = std::chrono::duration<double>(end_time - mid_time).count();
+        }
 
-        // time_per_iter.push_back(std::chrono::duration<double>(end_time - mid_time).count());
-        // std::cout << "Iteration time: "
-        //           << std::chrono::duration<double>(end_time - mid_time).count() << std::endl;
+        time_per_iter.push_back(std::chrono::duration<double>(end_time - mid_time).count());
+        std::cout << "Iteration time: "
+                  << std::chrono::duration<double>(end_time - mid_time).count() << std::endl;
 
         std::vector<State> new_path = decompose(path[path.size() - 1], x, bounds, dt, dims);
         // Keep only the first 2 states of the new path
@@ -362,7 +369,7 @@ void plan() {
 
     end_time = std::chrono::high_resolution_clock::now();
 
-    // std::cout << "Max iteration time: " << max_time << std::endl;
+    std::cout << "Max iteration time: " << max_time << std::endl;
     std::cout << "Avg iteration time: "
               << std::chrono::duration<double>(end_time - start_time).count() / num_iters
               << std::endl;
