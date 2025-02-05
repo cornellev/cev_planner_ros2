@@ -6,6 +6,7 @@
 #include <opencv2/core.hpp>  // Include OpenCV header
 #include <opencv2/imgproc.hpp>
 #include <opencv2/highgui.hpp>
+#include <bits/stdc++.h>
 
 using namespace Eigen;
 using namespace std;
@@ -66,10 +67,19 @@ void visualizeCostmap(const std::vector<std::vector<double>>& costmap, const Mat
     std::cout << "Costmap image saved as " << filename << std::endl;
 }
 
+// MatrixXf random_dfs(int rows, int cols) {
+//     MatrixXf grid = MatrixXf::Zero(rows, cols);
+//     int num_obstacles = 5000;
+
+//     std::unordered_set<std::tuple<>> y;
+// }
+
 MatrixXf generate_random_obstacles(int rows, int cols) {
-    int num_obstacles = 1000;
-    int obstacle_radius = 10;
+    int num_obstacles = 10;
+    int obstacle_radius = 5;
     MatrixXf grid = MatrixXf::Zero(rows, cols);
+
+    srand(1000);
 
     for (int i = 0; i < num_obstacles; ++i) {
         int x = rand() % rows;
@@ -101,15 +111,15 @@ int main() {
     //     25;
 
     // 5x5 grid with random 1s and 0s
-    MatrixXf grid = generate_random_obstacles(1000, 1000);
+    MatrixXf grid = generate_random_obstacles(100, 100);
     grid = (grid.array() > .5).cast<float>();
 
     // Print grid
     // cout << "Grid:\n" << grid << endl;
 
-    int search_radius = 30;
+    int search_radius = 10;
     int kernel_size = 2 * search_radius + 1;
-    float sigma = 20.0;
+    float sigma = 5.0;
 
     // Kernel initialization
     VectorXf kernel = createGaussianKernel(search_radius, sigma);
