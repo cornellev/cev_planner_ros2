@@ -11,6 +11,8 @@ find_package(rclcpp REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(NLopt REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 
 # CEV
 find_package(cev_msgs REQUIRED)
@@ -36,6 +38,8 @@ ament_target_dependencies(planner_node
     cev_msgs
     nav_msgs
     Eigen3
+    tf2_ros
+    tf2_geometry_msgs
 )
 
 target_link_libraries(planner_node

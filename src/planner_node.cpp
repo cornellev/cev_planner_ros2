@@ -2,9 +2,12 @@
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <eigen3/Eigen/Dense>
-
 #include <cev_msgs/msg/trajectory.hpp>
 #include <global_planning/rrt.h>
+#include "tf2_ros/transform_listener.h"
+#include "tf2_ros/buffer.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
+#include "tf2/utils.h"
 #include <iostream>
 
 using namespace cev_planner;
@@ -17,6 +20,9 @@ public:
         auto dimensions = Dimensions();
         auto constraints = Constraints();
         planner = std::make_shared<global_planner::RRT>(dimensions, constraints);
+
+        tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
@@ -43,6 +49,18 @@ private:
 
     std::shared_ptr<global_planner::RRT> planner;
 
+    // ROS
+
+    // TF
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+
+    // Init frames odom map baselink so that we can localize base_link inside map given the odom to
+    // map transform
+    std::string odom_frame = "odom";
+    std::string map_frame = "map";
+    std::string base_link_frame = "base_link";
+
     // Listener to the map
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub;
 
@@ -67,13 +85,29 @@ private:
         start = Pose{msg->pose.pose.position.x, msg->pose.pose.position.y, yaw};
         odom_initialized = true;
 
-        std::cout << start.x << " , " << start.y << " , " << yaw << std::endl;
+        // Transform into map frame
+        geometry_msgs::msg::TransformStamped transform;
+        try {
+            transform = tf_buffer_->lookupTransform(map_frame, odom_frame, tf2::TimePointZero);
+        } catch (tf2::TransformException& ex) {
+            RCLCPP_ERROR(this->get_logger(), "Could not transform odom to map: %s", ex.what());
+            return;
+        }
+
+        tf2::Transform tf_transform;
+        tf2::fromMsg(transform.transform, tf_transform);
+
+        start.x += transform.transform.translation.x;
+        start.y += transform.transform.translation.y;
+        start.theta = restrict_angle(tf2::getYaw(transform.transform.rotation) + start.theta);
+
+        std::cout << start.x << " , " << start.y << " , " << start.theta << std::endl;
 
         if (map_initialized && target_initialized) {
             Trajectory path = planner->plan_path(grid, start, target);
 
             current_path.header.stamp = msg->header.stamp;
-            current_path.header.frame_id = "odom";
+            current_path.header.frame_id = "map";
             current_path.waypoints.clear();
             for (Waypoint waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
