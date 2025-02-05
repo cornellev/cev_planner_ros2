@@ -53,8 +53,9 @@ void visualizeCostmap(const std::vector<std::vector<double>>& costmap, const Mat
     for (int i = 0; i < grid.rows(); ++i) {
         for (int j = 0; j < grid.cols(); ++j) {
             if (grid(i, j) > 0) {
+                // cv::circle(coloredImage, cv::Point(j, i), 1, cv::Scalar(200, 200, 200), -1);
                 cv::rectangle(coloredImage, cv::Point(j, i), cv::Point(j + 1, i + 1),
-                    cv::Scalar(255, 255, 255), -1);
+                    cv::Scalar(200, 200, 200), -1);
             }
         }
     }
@@ -66,8 +67,8 @@ void visualizeCostmap(const std::vector<std::vector<double>>& costmap, const Mat
 }
 
 MatrixXf generate_random_obstacles(int rows, int cols) {
-    int num_obstacles = 10;
-    int obstacle_radius = 2;
+    int num_obstacles = 1000;
+    int obstacle_radius = 10;
     MatrixXf grid = MatrixXf::Zero(rows, cols);
 
     for (int i = 0; i < num_obstacles; ++i) {
@@ -79,7 +80,10 @@ MatrixXf generate_random_obstacles(int rows, int cols) {
                 int new_x = x + j;
                 int new_y = y + k;
 
-                if (new_x >= 0 && new_x < rows && new_y >= 0 && new_y < cols) {
+                float dist = sqrt(j * j + k * k);
+
+                if (new_x >= 0 && new_x < rows && new_y >= 0 && new_y < cols
+                    && dist <= obstacle_radius) {
                     grid(new_x, new_y) = 1;
                 }
             }
@@ -97,13 +101,13 @@ int main() {
     //     25;
 
     // 5x5 grid with random 1s and 0s
-    MatrixXf grid = generate_random_obstacles(100, 100);
+    MatrixXf grid = generate_random_obstacles(1000, 1000);
     grid = (grid.array() > .5).cast<float>();
 
     // Print grid
     // cout << "Grid:\n" << grid << endl;
 
-    int search_radius = 10;
+    int search_radius = 30;
     int kernel_size = 2 * search_radius + 1;
     float sigma = 20.0;
 
