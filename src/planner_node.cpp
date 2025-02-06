@@ -21,6 +21,7 @@ public:
 
         auto dimensions = Dimensions();
         auto constraints = Constraints();
+
         planner = std::make_shared<local_planner::MPC>(dimensions, constraints,
             std::make_shared<cost_map::GaussianConvolution>(10, 5.0));
 
@@ -137,10 +138,35 @@ private:
         for (int i = 0; i < msg->info.width; i++) {
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
-                // Unknown is -1
-                grid.data(i, j) = msg->data[i * msg->info.width + j] / 100.0;
+                if (msg->data[j * msg->info.width + i] < 50) {
+                    grid.data(i, j) = 0.0;
+                } else {
+                    grid.data(i, j) = std::min(msg->data[j * msg->info.width + i] / 100.0, 1.0);
+                }
             }
         }
+
+        // int i_increment = 1;
+        // int j_increment = 1;
+        // int i = 0;
+        // int j = 0;
+
+        // int width = 100;
+        // int length = 50;
+
+        // grid.data = Eigen::MatrixXf(width, length);
+
+        // while (i < width) {
+        //     j = 0;
+        //     j_increment = 1;
+        //     while (j < length) {
+        //         grid.data(i, j) = 1.0;
+        //         j += j_increment;
+        //         // j_increment += 1;
+        //     }
+        //     i += i_increment;
+        //     i_increment += 1;
+        // }
 
         map_initialized = true;
     }
