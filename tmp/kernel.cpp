@@ -61,6 +61,15 @@ void visualizeCostmap(const std::vector<std::vector<double>>& costmap, const Mat
         }
     }
 
+    // Invert the image (optional)
+    // cv::bitwise_not(coloredImage, coloredImage);
+
+    // Make the red stronger
+    // cv::Mat channels[3];
+    // cv::split(coloredImage, channels);
+    // channels[2] = channels[2] * 2.0;
+    // cv::merge(channels, 3, coloredImage);
+
     // Save the colored image to a file
     cv::imwrite(filename, coloredImage);
 
@@ -75,8 +84,8 @@ void visualizeCostmap(const std::vector<std::vector<double>>& costmap, const Mat
 // }
 
 MatrixXf generate_random_obstacles(int rows, int cols) {
-    int num_obstacles = 10;
-    int obstacle_radius = 5;
+    int num_obstacles = 100;
+    int obstacle_radius = 10;
     MatrixXf grid = MatrixXf::Zero(rows, cols);
 
     srand(1000);
@@ -111,15 +120,15 @@ int main() {
     //     25;
 
     // 5x5 grid with random 1s and 0s
-    MatrixXf grid = generate_random_obstacles(100, 100);
+    MatrixXf grid = generate_random_obstacles(1000, 1000);
     grid = (grid.array() > .5).cast<float>();
 
     // Print grid
     // cout << "Grid:\n" << grid << endl;
 
-    int search_radius = 10;
+    int search_radius = 30;
     int kernel_size = 2 * search_radius + 1;
-    float sigma = 5.0;
+    float sigma = 15.0;
 
     // Kernel initialization
     VectorXf kernel = createGaussianKernel(search_radius, sigma);

@@ -3,12 +3,14 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <eigen3/Eigen/Dense>
 #include <cev_msgs/msg/trajectory.hpp>
-#include <global_planning/rrt.h>
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/utils.h"
 #include <iostream>
+
+#include "local_planning/mpc.h"
+#include "cost_map/gaussian_conv.h"
 
 using namespace cev_planner;
 
@@ -19,7 +21,8 @@ public:
 
         auto dimensions = Dimensions();
         auto constraints = Constraints();
-        planner = std::make_shared<global_planner::RRT>(dimensions, constraints);
+        planner = std::make_shared<local_planner::MPC>(dimensions, constraints,
+            std::make_shared<cost_map::GaussianConvolution>(10, 5.0));
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -38,18 +41,18 @@ public:
 
 private:
     Grid grid = Grid();
-    Pose start = Pose();
-    Pose target = Pose();
+    State start = State();
+    State target = State();
 
     bool map_initialized = false;
     bool odom_initialized = false;
-    bool target_initialized = false;
+    bool target_initialized = true;
 
     cev_msgs::msg::Trajectory current_path;
 
-    std::shared_ptr<global_planner::RRT> planner;
+    std::shared_ptr<local_planner::MPC> planner;
 
-    // ROS
+    //// ROS
 
     // TF
     std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
@@ -82,7 +85,8 @@ private:
         float yaw = restrict_angle(atan2(2.0 * (qw * qz + qx * qy),
             1.0 - 2.0 * (qy * qy + qz * qz)));
 
-        start = Pose{msg->pose.pose.position.x, msg->pose.pose.position.y, yaw};
+        start = State{msg->pose.pose.position.x, msg->pose.pose.position.y, yaw,
+            msg->twist.twist.linear.x, 0.0};
         odom_initialized = true;
 
         // Transform into map frame
@@ -97,23 +101,25 @@ private:
         tf2::Transform tf_transform;
         tf2::fromMsg(transform.transform, tf_transform);
 
-        start.x += transform.transform.translation.x;
-        start.y += transform.transform.translation.y;
-        start.theta = restrict_angle(tf2::getYaw(transform.transform.rotation) + start.theta);
+        start.pose.x += transform.transform.translation.x;
+        start.pose.y += transform.transform.translation.y;
+        start.pose.theta = restrict_angle(tf2::getYaw(transform.transform.rotation)
+                                          + start.pose.theta);
 
-        std::cout << start.x << " , " << start.y << " , " << start.theta << std::endl;
+        std::cout << start.pose.x << " , " << start.pose.y << " , " << start.pose.theta
+                  << std::endl;
 
-        if (map_initialized && target_initialized) {
-            Trajectory path = planner->plan_path(grid, start, target);
+        if (map_initialized && odom_initialized && target_initialized) {
+            Trajectory path = planner->plan_path(grid, start, target, Trajectory());
 
             current_path.header.stamp = msg->header.stamp;
             current_path.header.frame_id = "map";
             current_path.waypoints.clear();
             for (Waypoint waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
-                msg.x = waypoint.pose.x;
-                msg.y = waypoint.pose.y;
-                msg.v = 0.0;
+                msg.x = waypoint.state.pose.x;
+                msg.y = waypoint.state.pose.y;
+                msg.v = waypoint.velocity;
                 current_path.waypoints.push_back(msg);
             }
 
@@ -122,11 +128,11 @@ private:
     }
 
     void map_callback(const nav_msgs::msg::OccupancyGrid::SharedPtr msg) {
-        auto grid = Grid();
+        grid = Grid();
         grid.origin = Pose{msg->info.origin.position.x, msg->info.origin.position.y, 0};
         grid.resolution = msg->info.resolution;
 
-        grid.data = Eigen::MatrixXd(msg->info.width, msg->info.height);
+        grid.data = Eigen::MatrixXf(msg->info.width, msg->info.height);
 
         for (int i = 0; i < msg->info.width; i++) {
             for (int j = 0; j < msg->info.height; j++) {
@@ -140,7 +146,7 @@ private:
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
-        target = Pose{msg.x, msg.y, 0};
+        target = State{msg.x, msg.y, 0, msg.v, 0};
         target_initialized = true;
     }
 };
