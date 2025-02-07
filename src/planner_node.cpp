@@ -1,6 +1,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <nav_msgs/msg/path.hpp>
 #include <eigen3/Eigen/Dense>
 #include <cev_msgs/msg/trajectory.hpp>
 #include "tf2_ros/transform_listener.h"
@@ -19,11 +20,18 @@ public:
     PlannerNode(): Node("planner_node") {
         RCLCPP_INFO(this->get_logger(), "Initializing planner node");
 
-        auto dimensions = Dimensions();
-        auto constraints = Constraints();
+        Dimensions dimensions = Dimensions{1.0, 1.0, 1.0};
+        Constraints constraints = Constraints{
+            {-1000, 1000},          // x
+            {-1000, 1000},          // y
+            {-M_PI / 4, M_PI / 4},  // tau
+            {0, 10},                // vel
+            {-1, 1},                // accel
+            {-M_PI / 4, M_PI / 4}   // dtau
+        };
 
         planner = std::make_shared<local_planner::MPC>(dimensions, constraints,
-            std::make_shared<cost_map::GaussianConvolution>(10, 5.0));
+            std::make_shared<cost_map::GaussianConvolution>(15, 10.0));
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -38,12 +46,14 @@ public:
             std::bind(&PlannerNode::target_callback, this, std::placeholders::_1));
 
         path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("path", 1);
+
+        nav_path_pub = this->create_publisher<nav_msgs::msg::Path>("nav_path", 1);
     }
 
 private:
     Grid grid = Grid();
     State start = State();
-    State target = State();
+    State target = State{5, 5, 0, 0, 0};
 
     bool map_initialized = false;
     bool odom_initialized = false;
@@ -77,6 +87,8 @@ private:
     // Publisher for the planned path
     rclcpp::Publisher<cev_msgs::msg::Trajectory>::SharedPtr path_pub;
 
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr nav_path_pub;
+
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
         float qw = msg->pose.pose.orientation.w;
         float qx = msg->pose.pose.orientation.x;
@@ -95,7 +107,6 @@ private:
         try {
             transform = tf_buffer_->lookupTransform(map_frame, odom_frame, tf2::TimePointZero);
         } catch (tf2::TransformException& ex) {
-            RCLCPP_ERROR(this->get_logger(), "Could not transform odom to map: %s", ex.what());
             return;
         }
 
@@ -104,11 +115,11 @@ private:
 
         start.pose.x += transform.transform.translation.x;
         start.pose.y += transform.transform.translation.y;
-        start.pose.theta = restrict_angle(tf2::getYaw(transform.transform.rotation)
-                                          + start.pose.theta);
+        start.pose.theta = restrict_angle(start.pose.theta
+                                          + tf2::getYaw(transform.transform.rotation));
 
-        std::cout << start.pose.x << " , " << start.pose.y << " , " << start.pose.theta
-                  << std::endl;
+        // std::cout << start.pose.x << " , " << start.pose.y << " , " << start.pose.theta
+        //           << std::endl;
 
         if (map_initialized && odom_initialized && target_initialized) {
             Trajectory path = planner->plan_path(grid, start, target, Trajectory());
@@ -116,15 +127,32 @@ private:
             current_path.header.stamp = msg->header.stamp;
             current_path.header.frame_id = "map";
             current_path.waypoints.clear();
-            for (Waypoint waypoint: path.waypoints) {
+            for (State waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
-                msg.x = waypoint.state.pose.x;
-                msg.y = waypoint.state.pose.y;
-                msg.v = waypoint.velocity;
+                msg.x = waypoint.pose.x;
+                msg.y = waypoint.pose.y;
+                msg.v = waypoint.vel;
                 current_path.waypoints.push_back(msg);
             }
 
             path_pub->publish(current_path);
+
+            nav_msgs::msg::Path nav_path;
+            nav_path.header.stamp = msg->header.stamp;
+            nav_path.header.frame_id = "map";
+            nav_path.poses.clear();
+
+            for (State waypoint: path.waypoints) {
+                geometry_msgs::msg::PoseStamped pose;
+                pose.pose.position.x = waypoint.pose.x;
+                pose.pose.position.y = waypoint.pose.y;
+                pose.pose.position.z = 0;
+                pose.pose.orientation = tf2::toMsg(tf2::Quaternion(tf2::Vector3(0, 0, 1),
+                    waypoint.pose.theta));
+                nav_path.poses.push_back(pose);
+            }
+
+            nav_path_pub->publish(nav_path);
         }
     }
 
