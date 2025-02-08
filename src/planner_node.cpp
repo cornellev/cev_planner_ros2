@@ -45,7 +45,7 @@ public:
         target_sub = this->create_subscription<cev_msgs::msg::Waypoint>("target", 1,
             std::bind(&PlannerNode::target_callback, this, std::placeholders::_1));
 
-        path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("path", 1);
+        path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("trajectory", 1);
 
         nav_path_pub = this->create_publisher<nav_msgs::msg::Path>("nav_path", 1);
 
