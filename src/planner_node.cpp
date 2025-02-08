@@ -20,8 +20,8 @@ public:
     PlannerNode(): Node("planner_node") {
         RCLCPP_INFO(this->get_logger(), "Initializing planner node");
 
-        Dimensions dimensions = Dimensions{1.0, 1.0, 1.0};
-        Constraints constraints = Constraints{
+        Dimensions dimensions = Dimensions{.3, .3, .3};
+        Constraints positive_constraints = Constraints{
             {-1000, 1000},          // x
             {-1000, 1000},          // y
             {-M_PI / 4, M_PI / 4},  // tau
@@ -30,8 +30,17 @@ public:
             {-M_PI / 4, M_PI / 4}   // dtau
         };
 
-        planner = std::make_shared<local_planner::MPC>(dimensions, constraints,
-            std::make_shared<cost_map::GaussianConvolution>(15, 5.0));
+        Constraints full_constraints = Constraints{
+            {-1000, 1000},          // x
+            {-1000, 1000},          // y
+            {-M_PI / 4, M_PI / 4},  // tau
+            {-.5, .5},              // vel
+            {-.25, .25},            // accel
+            {-M_PI / 4, M_PI / 4}   // dtau
+        };
+
+        planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
+            std::make_shared<cost_map::GaussianConvolution>(15, 2.0));
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -56,11 +65,11 @@ public:
 private:
     Grid grid = Grid();
     State start = State();
-    State target = State{5, 5, 0, 0, 0};
+    State target = State();
 
     bool map_initialized = false;
     bool odom_initialized = false;
-    bool target_initialized = true;
+    bool target_initialized = false;
 
     cev_msgs::msg::Trajectory current_path;
 
