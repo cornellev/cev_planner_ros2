@@ -25,13 +25,13 @@ public:
             {-1000, 1000},          // x
             {-1000, 1000},          // y
             {-M_PI / 4, M_PI / 4},  // tau
-            {0, 10},                // vel
-            {-1, 1},                // accel
+            {0, .5},                // vel
+            {0, .25},               // accel
             {-M_PI / 4, M_PI / 4}   // dtau
         };
 
         planner = std::make_shared<local_planner::MPC>(dimensions, constraints,
-            std::make_shared<cost_map::GaussianConvolution>(15, 10.0));
+            std::make_shared<cost_map::GaussianConvolution>(15, 5.0));
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -48,6 +48,9 @@ public:
         path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("path", 1);
 
         nav_path_pub = this->create_publisher<nav_msgs::msg::Path>("nav_path", 1);
+
+        target_rviz_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>("goal_pose", 1,
+            std::bind(&PlannerNode::rviz_target_callback, this, std::placeholders::_1));
     }
 
 private:
@@ -89,6 +92,8 @@ private:
 
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr nav_path_pub;
 
+    rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_rviz_sub;
+
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
         float qw = msg->pose.pose.orientation.w;
         float qx = msg->pose.pose.orientation.x;
@@ -113,13 +118,10 @@ private:
         tf2::Transform tf_transform;
         tf2::fromMsg(transform.transform, tf_transform);
 
-        start.pose.x += transform.transform.translation.x;
-        start.pose.y += transform.transform.translation.y;
-        start.pose.theta = restrict_angle(start.pose.theta
-                                          + tf2::getYaw(transform.transform.rotation));
-
-        // std::cout << start.pose.x << " , " << start.pose.y << " , " << start.pose.theta
-        //           << std::endl;
+        // start.pose.x += transform.transform.translation.x;
+        // start.pose.y += transform.transform.translation.y;
+        // start.pose.theta = restrict_angle(start.pose.theta
+        //                                   + tf2::getYaw(transform.transform.rotation));
 
         if (map_initialized && odom_initialized && target_initialized) {
             Trajectory path = planner->plan_path(grid, start, target, Trajectory());
@@ -166,7 +168,9 @@ private:
         for (int i = 0; i < msg->info.width; i++) {
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
-                if (msg->data[j * msg->info.width + i] < 50) {
+                if (msg->data[j * msg->info.width + i] < 0) {
+                    grid.data(i, j) = .3;
+                } else if (msg->data[j * msg->info.width + i] < 50) {
                     grid.data(i, j) = 0.0;
                 } else {
                     grid.data(i, j) = std::min(msg->data[j * msg->info.width + i] / 100.0, 1.0);
@@ -174,33 +178,16 @@ private:
             }
         }
 
-        // int i_increment = 1;
-        // int j_increment = 1;
-        // int i = 0;
-        // int j = 0;
-
-        // int width = 100;
-        // int length = 50;
-
-        // grid.data = Eigen::MatrixXf(width, length);
-
-        // while (i < width) {
-        //     j = 0;
-        //     j_increment = 1;
-        //     while (j < length) {
-        //         grid.data(i, j) = 1.0;
-        //         j += j_increment;
-        //         // j_increment += 1;
-        //     }
-        //     i += i_increment;
-        //     i_increment += 1;
-        // }
-
         map_initialized = true;
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
         target = State{msg.x, msg.y, 0, msg.v, 0};
+        target_initialized = true;
+    }
+
+    void rviz_target_callback(const geometry_msgs::msg::PoseStamped msg) {
+        target = State{msg.pose.position.x, msg.pose.position.y, 0, 0, 0};
         target_initialized = true;
     }
 };
