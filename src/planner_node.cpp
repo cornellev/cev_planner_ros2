@@ -12,6 +12,7 @@
 
 #include "local_planning/mpc.h"
 #include "cost_map/gaussian_conv.h"
+#include "cost_map/nearest.h"
 
 using namespace cev_planner;
 
@@ -22,25 +23,25 @@ public:
 
         Dimensions dimensions = Dimensions{.3, .3, .3};
         Constraints positive_constraints = Constraints{
-            {-1000, 1000},          // x
-            {-1000, 1000},          // y
-            {-M_PI / 4, M_PI / 4},  // tau
-            {0, .5},                // vel
-            {0, .25},               // accel
-            {-M_PI / 4, M_PI / 4}   // dtau
+            {-1000, 1000},  // x
+            {-1000, 1000},  // y
+            {-.34, .34},    // tau
+            {0, .5},        // vel
+            {0, .25},       // accel
+            {-.34, .34}     // dtau
         };
 
         Constraints full_constraints = Constraints{
-            {-1000, 1000},          // x
-            {-1000, 1000},          // y
-            {-M_PI / 4, M_PI / 4},  // tau
-            {-.5, .5},              // vel
-            {-.25, .25},            // accel
-            {-M_PI / 4, M_PI / 4}   // dtau
+            {-1000, 1000},  // x
+            {-1000, 1000},  // y
+            {-.34, .34},    // tau
+            {-1, 1},        // vel
+            {-.5, .5},      // accel
+            {-.34, .34}     // dtau
         };
 
         planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-            std::make_shared<cost_map::GaussianConvolution>(15, 2.0));
+            std::make_shared<cost_map::NearestGenerator>(15, 1.15));
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -127,12 +128,13 @@ private:
         tf2::Transform tf_transform;
         tf2::fromMsg(transform.transform, tf_transform);
 
-        // start.pose.x += transform.transform.translation.x;
-        // start.pose.y += transform.transform.translation.y;
-        // start.pose.theta = restrict_angle(start.pose.theta
-        //                                   + tf2::getYaw(transform.transform.rotation));
+        start.pose.x += transform.transform.translation.x;
+        start.pose.y += transform.transform.translation.y;
+        start.pose.theta = restrict_angle(start.pose.theta
+                                          + tf2::getYaw(transform.transform.rotation));
 
         if (map_initialized && odom_initialized && target_initialized) {
+            std::cout << "Planning!" << std::endl;
             Trajectory path = planner->plan_path(grid, start, target, Trajectory());
 
             current_path.header.stamp = msg->header.stamp;
@@ -143,6 +145,8 @@ private:
                 msg.x = waypoint.pose.x;
                 msg.y = waypoint.pose.y;
                 msg.v = waypoint.vel;
+                msg.theta = waypoint.pose.theta;
+                msg.tau = waypoint.tau;
                 current_path.waypoints.push_back(msg);
             }
 
@@ -182,7 +186,8 @@ private:
                 } else if (msg->data[j * msg->info.width + i] < 50) {
                     grid.data(i, j) = 0.0;
                 } else {
-                    grid.data(i, j) = std::min(msg->data[j * msg->info.width + i] / 100.0, 1.0);
+                    // grid.data(i, j) = std::min(msg->data[j * msg->info.width + i] / 100.0, 1.0);
+                    grid.data(i, j) = 1.0;
                 }
             }
         }
