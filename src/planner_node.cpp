@@ -151,8 +151,7 @@ private:
 
         if (map_initialized && odom_initialized && target_initialized
             && (!second_iteration_passed
-                || (dist > .2))) {  // Ensure that enough dist has changed before replan
-            std::cout << "Planning!" << std::endl;
+                || (dist > .1))) {              // Ensure that enough dist has changed before replan
             Trajectory path = planner->plan_path(grid, start, target, Trajectory());
 
             if (path.cost >= prev_path_cost) {  // Worse path
