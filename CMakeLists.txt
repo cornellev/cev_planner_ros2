@@ -32,8 +32,18 @@ set(SOURCES
 )
 
 add_executable(planner_node ${SOURCES})
+add_executable(tf_test src/tf_test.cpp)
 
 ament_target_dependencies(planner_node
+    rclcpp
+    cev_msgs
+    nav_msgs
+    Eigen3
+    tf2_ros
+    tf2_geometry_msgs
+)
+
+ament_target_dependencies(tf_test
     rclcpp
     cev_msgs
     nav_msgs
@@ -46,8 +56,15 @@ target_link_libraries(planner_node
     cev_planner
 )
 
+target_link_libraries(tf_test
+    cev_planner
+)
+
 # Declare the executable
 install(TARGETS planner_node
+    DESTINATION lib/${PROJECT_NAME})
+
+install(TARGETS tf_test
     DESTINATION lib/${PROJECT_NAME})
 
 # Install additional resources
