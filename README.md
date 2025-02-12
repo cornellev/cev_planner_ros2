@@ -5,6 +5,7 @@ and make a `src` folder inside. `cd` into the
 `src` folder and then:  
 `git clone --recurse-submodules {repo_url}`  
 `sudo apt install libnlopt-dev`  
+`sudo apt install libnlopt-cxx-dev`
 Clone [cev_msgs](https://github.com/cornellev/cev_msgs)
     
 Then `cd` back to the workspace root and `colcon build`.
