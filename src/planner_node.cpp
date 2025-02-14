@@ -40,8 +40,11 @@ public:
             {-.34, .34}     // dtau
         };
 
+        // planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
+        //     std::make_shared<cost_map::NearestGenerator>(5, 1.05));
+
         planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-            std::make_shared<cost_map::NearestGenerator>(5, 1.05));
+            std::make_shared<cost_map::GaussianConvolution>(10, 3));
 
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
