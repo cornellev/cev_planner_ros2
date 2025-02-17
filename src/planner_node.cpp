@@ -41,14 +41,10 @@ public:
             {-.34, .34}     // dtau
         };
 
-        // planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-        //     std::make_shared<cost_map::NearestGenerator>(5, 1.05));
-
-        planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
+        local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
             std::make_shared<cost_map::NearestGenerator>(3, .5));
 
         global_planner = std::make_shared<global_planner::RRT>(dimensions, full_constraints);
-
 
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
@@ -61,34 +57,42 @@ public:
 
         path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("trajectory", 1);
 
-        nav_path_pub = this->create_publisher<nav_msgs::msg::Path>("nav_path", 1);
+        // Global plan every 2 seconds
+        global_plan_timer = this->create_wall_timer(std::chrono::milliseconds(2000),
+            std::bind(&PlannerNode::global_plan_callback, this));
+
+        // RVIZ Debug
+        global_path_pub = this->create_publisher<nav_msgs::msg::Path>("global_path", 1);
+        local_path_pub = this->create_publisher<nav_msgs::msg::Path>("local_path", 1);
 
         target_rviz_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>("goal_pose", 1,
             std::bind(&PlannerNode::rviz_target_callback, this, std::placeholders::_1));
-
-        estimated_position_in_map_frame = this->create_publisher<geometry_msgs::msg::PoseStamped>(
-            "estimated_position_in_map_frame", 1);
     }
 
 private:
     Grid grid = Grid();
     State start = State();
     State prev_start = State();
-    bool second_iteration_passed = false;
     State target = State();
-    float prev_path_cost = 100000000;
 
     bool map_initialized = false;
     bool odom_initialized = false;
     bool target_initialized = false;
 
-    cev_msgs::msg::Trajectory current_path;
-
-    std::shared_ptr<local_planner::MPC> planner;
+    // Global Planner
     std::shared_ptr<global_planner::RRT> global_planner;
+    Trajectory global_path;
+    double global_path_cost = 100000000;
+    bool global_path_initialized = false;
+
+    // Local Planner
+    bool second_iteration_passed = false;
+    float prev_path_cost = 100000000;
+    Trajectory current_local_plan;
+
+    std::shared_ptr<local_planner::MPC> local_planner;
 
     //// ROS
-
     // TF
     tf2_ros::Buffer tf_buffer_;
     tf2_ros::TransformListener tf_listener_;
@@ -108,11 +112,55 @@ private:
     // Publisher for the planned path
     rclcpp::Publisher<cev_msgs::msg::Trajectory>::SharedPtr path_pub;
 
-    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr nav_path_pub;
+    // Wall timer for global plan
+    rclcpp::TimerBase::SharedPtr global_plan_timer;
 
+    // RVIZ
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr global_path_pub;
+    rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr local_path_pub;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_rviz_sub;
 
-    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr estimated_position_in_map_frame;
+    // -------------------------------
+
+    void global_plan_callback() {
+        if (odom_initialized && map_initialized && target_initialized) {
+            std::optional<Trajectory> optional = global_planner->plan_path(grid, start, target);
+            if (!optional.has_value()) {
+                std::cout << "Global Path Failed." << std::endl;
+                global_path_initialized = false;
+            } else {
+                std::cout << "Global Path Planned." << std::endl;
+                // Fill in the global path with all nodes except the first and last from the global
+                // path
+                // global_path.waypoints = std::vector<State>(optional.value().waypoints.begin() +
+                // 1,
+                //     optional.value().waypoints.end() - 1);
+                global_path.waypoints = optional.value().waypoints;
+
+                // TODO: Cost shenanigans, waypoint pass checking
+
+                // Publish global path
+                nav_msgs::msg::Path global_nav_path;
+                global_nav_path.header.stamp = this->now();
+                global_nav_path.header.frame_id = "map";
+                global_nav_path.poses.clear();
+
+                for (State waypoint: global_path.waypoints) {
+                    geometry_msgs::msg::PoseStamped pose;
+                    pose.pose.position.x = waypoint.pose.x;
+                    pose.pose.position.y = waypoint.pose.y;
+                    pose.pose.position.z = 0;
+                    pose.pose.orientation = tf2::toMsg(tf2::Quaternion(tf2::Vector3(0, 0, 1),
+                        waypoint.pose.theta));
+                    global_nav_path.poses.push_back(pose);
+                }
+
+                global_path_pub->publish(global_nav_path);
+
+                global_path_initialized = true;
+            }
+        }
+    }
 
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg) {
         // Transform into map frame
@@ -153,26 +201,31 @@ private:
         point.pose.orientation = tf2::toMsg(tf2::Quaternion(tf2::Vector3(0, 0, 1),
             start.pose.theta));
 
-        estimated_position_in_map_frame->publish(point);
-
         float dist = start.pose.distance_to(prev_start.pose);
 
-        if (map_initialized && odom_initialized && target_initialized
-            && (!second_iteration_passed
-                || (dist > .1))) {              // Ensure that enough dist has changed before replan
-            Trajectory path = planner->plan_path(grid, start, target, Trajectory());
+        if (map_initialized && odom_initialized && target_initialized && global_path_initialized) {
+            // && (!second_iteration_passed
+            //     || (dist > .1))) {              // Ensure that enough dist has changed before
+            //     replan
+            Trajectory path = local_planner->plan_path(grid, start, target, global_path);
 
             if (path.cost >= prev_path_cost) {  // Worse path
                 return;
             }
 
+            std::cout << "Keeping path" << std::endl;
+
+            current_local_plan = path;
+
             prev_path_cost = path.cost;
             second_iteration_passed = true;
             prev_start = start;
 
-            current_path.header.stamp = msg->header.stamp;
-            current_path.header.frame_id = "map";
-            current_path.waypoints.clear();
+            cev_msgs::msg::Trajectory current_plan;
+
+            current_plan.header.stamp = msg->header.stamp;
+            current_plan.header.frame_id = "map";
+            current_plan.waypoints.clear();
             for (State waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
                 msg.x = waypoint.pose.x;
@@ -186,12 +239,12 @@ private:
                 msg.v = waypoint.vel;
                 msg.theta = waypoint.pose.theta;
                 msg.tau = waypoint.tau;
-                current_path.waypoints.push_back(msg);
-                // std::cout << "Waypoint: " << msg.theta << ", " << msg.tau << std::endl;
+                current_plan.waypoints.push_back(msg);
             }
 
-            path_pub->publish(current_path);
+            path_pub->publish(current_plan);
 
+            // Publish local path
             nav_msgs::msg::Path nav_path;
             nav_path.header.stamp = msg->header.stamp;
             nav_path.header.frame_id = "map";
@@ -207,7 +260,7 @@ private:
                 nav_path.poses.push_back(pose);
             }
 
-            nav_path_pub->publish(nav_path);
+            local_path_pub->publish(nav_path);
         }
     }
 
@@ -222,7 +275,7 @@ private:
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
                 if (msg->data[j * msg->info.width + i] < 0) {
-                    grid.data(i, j) = 0.3;
+                    grid.data(i, j) = -1.0;
                 } else if (msg->data[j * msg->info.width + i] < 50) {
                     grid.data(i, j) = 0.0;
                 } else {
@@ -236,6 +289,7 @@ private:
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
+        global_path_initialized = false;
         target = State{msg.x, msg.y, 0, msg.v, 0};
         prev_path_cost = 100000000;
         second_iteration_passed = false;
@@ -243,6 +297,7 @@ private:
     }
 
     void rviz_target_callback(const geometry_msgs::msg::PoseStamped msg) {
+        global_path_initialized = false;
         target = State{msg.pose.position.x, msg.pose.position.y, 0, 0, 0};
         prev_path_cost = 100000000;
         second_iteration_passed = false;
