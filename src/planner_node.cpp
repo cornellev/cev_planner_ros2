@@ -222,7 +222,7 @@ private:
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
                 if (msg->data[j * msg->info.width + i] < 0) {
-                    grid.data(i, j) = -1.0;
+                    grid.data(i, j) = 0.3;
                 } else if (msg->data[j * msg->info.width + i] < 50) {
                     grid.data(i, j) = 0.0;
                 } else {
