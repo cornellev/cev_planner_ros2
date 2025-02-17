@@ -36,7 +36,7 @@ public:
             {-1000, 1000},  // y
             {-.34, .34},    // tau
             {-.5, 1.0},     // vel
-            {-.25, .4},     // accel
+            {-.75, .75},    // accel
             {-.34, .34}     // dtau
         };
 
@@ -44,7 +44,7 @@ public:
         //     std::make_shared<cost_map::NearestGenerator>(5, 1.05));
 
         planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-            std::make_shared<cost_map::NearestGenerator>(10, .75));
+            std::make_shared<cost_map::NearestGenerator>(3, .5));
 
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
