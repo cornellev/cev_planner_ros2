@@ -11,6 +11,7 @@
 #include <iostream>
 
 #include "local_planning/mpc.h"
+#include "global_planning/rrt.h"
 #include "cost_map/gaussian_conv.h"
 
 using namespace cev_planner;
@@ -41,6 +42,8 @@ public:
 
         planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
             std::make_shared<cost_map::GaussianConvolution>(15, 2.0));
+
+        global_planner = std::make_shared<global_planner::RRT>(dimensions, full_constraints);
 
         tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
         tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
@@ -74,6 +77,7 @@ private:
     cev_msgs::msg::Trajectory current_path;
 
     std::shared_ptr<local_planner::MPC> planner;
+    std::shared_ptr<global_planner::RRT> global_planner;
 
     //// ROS
 
@@ -133,7 +137,7 @@ private:
         //                                   + tf2::getYaw(transform.transform.rotation));
 
         if (map_initialized && odom_initialized && target_initialized) {
-            Trajectory path = planner->plan_path(grid, start, target, Trajectory());
+            Trajectory path = global_planner->plan_path(grid, start, target);
 
             current_path.header.stamp = msg->header.stamp;
             current_path.header.frame_id = "map";
@@ -178,7 +182,7 @@ private:
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
                 if (msg->data[j * msg->info.width + i] < 0) {
-                    grid.data(i, j) = .3;
+                    grid.data(i, j) = -1.0;
                 } else if (msg->data[j * msg->info.width + i] < 50) {
                     grid.data(i, j) = 0.0;
                 } else {
