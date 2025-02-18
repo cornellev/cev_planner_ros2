@@ -236,6 +236,7 @@ private:
             current_plan.header.stamp = msg->header.stamp;
             current_plan.header.frame_id = "map";
             current_plan.waypoints.clear();
+            current_plan.timestep = path.timestep;
 
             // std::cout << "What 3" << std::endl;
 
