@@ -36,8 +36,8 @@ public:
             {-1000, 1000},  // x
             {-1000, 1000},  // y
             {-.34, .34},    // tau
-            {-.5, 1.0},     // vel
-            {-.75, .75},    // accel
+            {-.5, .75},     // vel
+            {-.3, .4},      // accel
             {-.34, .34}     // dtau
         };
 
@@ -123,7 +123,7 @@ private:
     // -------------------------------
 
     void global_plan_callback() {
-        if (odom_initialized && map_initialized && target_initialized) {
+        if (odom_initialized && map_initialized && target_initialized && !global_path_initialized) {
             std::optional<Trajectory> optional = global_planner->plan_path(grid, start, target);
             if (!optional.has_value()) {
                 std::cout << "Global Path Failed." << std::endl;
@@ -203,17 +203,25 @@ private:
 
         float dist = start.pose.distance_to(prev_start.pose);
 
-        if (map_initialized && odom_initialized && target_initialized && global_path_initialized) {
-            // && (!second_iteration_passed
-            //     || (dist > .1))) {              // Ensure that enough dist has changed before
-            //     replan
-            Trajectory path = local_planner->plan_path(grid, start, target, global_path);
+        if (map_initialized && odom_initialized && target_initialized && global_path_initialized
+            && (!second_iteration_passed
+                || (dist > .1))) {  // Ensure that enough dist has changed before
+            // replan
+            // Keep only waypoints not including start or target from the global path
+            Trajectory waypoints = global_path;
+            // std::cout << waypoints.waypoints.size() << std::endl;
+            waypoints.waypoints = std::vector<State>(waypoints.waypoints.begin() + 1,
+                waypoints.waypoints.end() - 1);
+            // std::cout << waypoints.waypoints.size() << std::endl;
+
+            Trajectory path = local_planner->plan_path(grid, start, target, waypoints);
+            // Trajectory path = local_planner->plan_path(grid, start, target, Trajectory());
 
             if (path.cost >= prev_path_cost) {  // Worse path
                 return;
             }
 
-            std::cout << "Keeping path" << std::endl;
+            // std::cout << "Keeping path" << std::endl;
 
             current_local_plan = path;
 
@@ -221,26 +229,34 @@ private:
             second_iteration_passed = true;
             prev_start = start;
 
+            // std::cout << "What 2" << std::endl;
+
             cev_msgs::msg::Trajectory current_plan;
 
             current_plan.header.stamp = msg->header.stamp;
             current_plan.header.frame_id = "map";
             current_plan.waypoints.clear();
+
+            // std::cout << "What 3" << std::endl;
+
             for (State waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
                 msg.x = waypoint.pose.x;
                 msg.y = waypoint.pose.y;
 
-                if (std::abs(waypoint.vel) < .3
-                    && std::abs(waypoint.vel) > 0.0) {  // Car cannot move that slow lol
-                    waypoint.vel = (waypoint.vel >= 0) ? .3 : -.3;
-                }
+                // if (std::abs(waypoint.vel) < .3
+                //     && std::abs(waypoint.vel) > 0.0) {  // Car cannot move that slow lol
+                //     waypoint.vel = (waypoint.vel >= 0) ? .3 : -.3;
+                // }
 
                 msg.v = waypoint.vel;
+                // msg.v = .5;
                 msg.theta = waypoint.pose.theta;
                 msg.tau = waypoint.tau;
                 current_plan.waypoints.push_back(msg);
             }
+
+            // std::cout << "Publishing path" << std::endl;
 
             path_pub->publish(current_plan);
 
