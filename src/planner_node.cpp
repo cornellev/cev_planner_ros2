@@ -14,6 +14,7 @@
 #include "global_planning/rrt.h"
 #include "cost_map/gaussian_conv.h"
 #include "cost_map/nearest.h"
+#include "cost_map/nothing.h"
 
 using namespace cev_planner;
 
@@ -89,6 +90,7 @@ private:
     bool second_iteration_passed = false;
     float prev_path_cost = 100000000;
     Trajectory current_local_plan;
+    int current_waypoint_in_global = 0;
 
     std::shared_ptr<local_planner::MPC> local_planner;
 
@@ -176,7 +178,7 @@ private:
             transform = tf_buffer_.lookupTransform("map", "odom", tf2::TimePointZero);
             tf2::doTransform(base_link_pose, map_pose, transform);
         } catch (const tf2::TransformException& ex) {
-            RCLCPP_WARN(this->get_logger(), "Could not transform odom to map: %s", ex.what());
+            RCLCPP_DEBUG(this->get_logger(), "Could not transform odom to map: %s", ex.what());
             return;
         }
 
@@ -203,15 +205,40 @@ private:
 
         float dist = start.pose.distance_to(prev_start.pose);
 
-        if (map_initialized && odom_initialized && target_initialized && global_path_initialized
-            && (!second_iteration_passed
-                || (dist > .1))) {  // Ensure that enough dist has changed before
+        if (map_initialized && odom_initialized && target_initialized && global_path_initialized) {
+            // && (!second_iteration_passed
+            //     || (dist > .025))) {  // Ensure that enough dist has changed before
             // replan
             // Keep only waypoints not including start or target from the global path
-            Trajectory waypoints = global_path;
-            // std::cout << waypoints.waypoints.size() << std::endl;
-            waypoints.waypoints = std::vector<State>(waypoints.waypoints.begin() + 1,
-                waypoints.waypoints.end() - 1);
+
+            float dist =
+                start.pose.distance_to(global_path.waypoints[current_waypoint_in_global].pose);
+
+            while (dist < 1.0 && current_waypoint_in_global < global_path.waypoints.size()) {
+                // std::cout << "Skipping" << std::endl;
+                current_waypoint_in_global += 1;
+                dist =
+                    start.pose.distance_to(global_path.waypoints[current_waypoint_in_global].pose);
+            }
+
+            std::cout << "Current: " << current_waypoint_in_global << std::endl;
+            std::cout << "Dist to waypoint: " << dist << std::endl;
+
+            Trajectory waypoints;
+
+            if (current_waypoint_in_global < global_path.waypoints.size() - 1) {
+                waypoints.waypoints.push_back(global_path.waypoints[current_waypoint_in_global]);
+
+                if ((current_waypoint_in_global + 1) < global_path.waypoints.size()) {
+                    waypoints.waypoints.push_back(
+                        global_path.waypoints[current_waypoint_in_global + 1]);
+                } else {
+                    waypoints.waypoints.push_back(target);
+                }
+            } else {
+                waypoints.waypoints.push_back(target);
+            }
+
             // std::cout << waypoints.waypoints.size() << std::endl;
 
             Trajectory path = local_planner->plan_path(grid, start, target, waypoints);
@@ -306,6 +333,7 @@ private:
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
+        current_waypoint_in_global = 0;
         global_path_initialized = false;
         target = State{msg.x, msg.y, 0, msg.v, 0};
         prev_path_cost = 100000000;
@@ -314,6 +342,7 @@ private:
     }
 
     void rviz_target_callback(const geometry_msgs::msg::PoseStamped msg) {
+        current_waypoint_in_global = 0;
         global_path_initialized = false;
         target = State{msg.pose.position.x, msg.pose.position.y, 0, 0, 0};
         prev_path_cost = 100000000;
