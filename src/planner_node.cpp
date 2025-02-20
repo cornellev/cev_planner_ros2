@@ -159,6 +159,35 @@ private:
 
                 global_path_pub->publish(global_nav_path);
 
+                // cev_msgs::msg::Trajectory current_plan;
+
+                // current_plan.header.stamp = this->now();
+                // current_plan.header.frame_id = "map";
+                // current_plan.waypoints.clear();
+                // current_plan.timestep = global_path.timestep;
+
+                // // std::cout << "What 3" << std::endl;
+
+                // for (State waypoint: global_path.waypoints) {
+                //     cev_msgs::msg::Waypoint msg;
+                //     msg.x = waypoint.pose.x;
+                //     msg.y = waypoint.pose.y;
+
+                //     // if (std::abs(waypoint.vel) < .3
+                //     //     && std::abs(waypoint.vel) > 0.0) {  // Car cannot move that slow lol
+                //     //     waypoint.vel = (waypoint.vel >= 0) ? .3 : -.3;
+                //     // }
+
+                //     msg.v = waypoint.vel;
+                //     msg.theta = waypoint.pose.theta;
+                //     msg.tau = waypoint.tau;
+                //     current_plan.waypoints.push_back(msg);
+                // }
+
+                // std::cout << "Publishing path" << std::endl;
+
+                // path_pub->publish(current_plan);
+
                 global_path_initialized = true;
             }
         }
@@ -221,8 +250,8 @@ private:
                     start.pose.distance_to(global_path.waypoints[current_waypoint_in_global].pose);
             }
 
-            std::cout << "Current: " << current_waypoint_in_global << std::endl;
-            std::cout << "Dist to waypoint: " << dist << std::endl;
+            // std::cout << "Current: " << current_waypoint_in_global << std::endl;
+            // std::cout << "Dist to waypoint: " << dist << std::endl;
 
             Trajectory waypoints;
 
@@ -244,9 +273,9 @@ private:
             Trajectory path = local_planner->plan_path(grid, start, target, waypoints);
             // Trajectory path = local_planner->plan_path(grid, start, target, Trajectory());
 
-            if (path.cost >= prev_path_cost) {  // Worse path
-                return;
-            }
+            // if (path.cost >= prev_path_cost) {  // Worse path
+            //     return;
+            // }
 
             // std::cout << "Keeping path" << std::endl;
 
@@ -267,6 +296,8 @@ private:
 
             // std::cout << "What 3" << std::endl;
 
+            // std::cout << "Publishing path." << std::endl;
+
             for (State waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
                 msg.x = waypoint.pose.x;
@@ -278,7 +309,6 @@ private:
                 // }
 
                 msg.v = waypoint.vel;
-                // msg.v = .5;
                 msg.theta = waypoint.pose.theta;
                 msg.tau = waypoint.tau;
                 current_plan.waypoints.push_back(msg);
