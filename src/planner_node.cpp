@@ -43,7 +43,7 @@ public:
         };
 
         local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-            std::make_shared<cost_map::NearestGenerator>(2, .5));
+            std::make_shared<cost_map::Nothing>(2, .5));
 
         global_planner = std::make_shared<global_planner::RRT>(dimensions, full_constraints);
 
@@ -243,6 +243,29 @@ private:
             float dist =
                 start.pose.distance_to(global_path.waypoints[current_waypoint_in_global].pose);
 
+            float dist_to_dest = start.pose.distance_to(target.pose);
+
+            if (dist_to_dest < .4) {
+                // Write a trajectory with 0 velocity
+                cev_msgs::msg::Trajectory current_plan;
+
+                current_plan.header.stamp = msg->header.stamp;
+                current_plan.header.frame_id = "map";
+                current_plan.waypoints.clear();
+
+                cev_msgs::msg::Waypoint msg;
+                msg.x = target.pose.x;
+                msg.y = target.pose.y;
+                msg.v = 0;
+                msg.theta = target.pose.theta;
+                msg.tau = target.tau;
+                current_plan.waypoints.push_back(msg);
+
+                path_pub->publish(current_plan);
+
+                return;
+            }
+
             while (dist < 1.0 && current_waypoint_in_global < global_path.waypoints.size()) {
                 // std::cout << "Skipping" << std::endl;
                 current_waypoint_in_global += 1;
@@ -273,9 +296,9 @@ private:
             Trajectory path = local_planner->plan_path(grid, start, target, waypoints);
             // Trajectory path = local_planner->plan_path(grid, start, target, Trajectory());
 
-            // if (path.cost >= prev_path_cost) {  // Worse path
-            //     return;
-            // }
+            if (path.cost >= prev_path_cost && dist < .3) {  // Worse path and hasn't moved too much
+                return;
+            }
 
             // std::cout << "Keeping path" << std::endl;
 
