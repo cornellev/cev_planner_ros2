@@ -39,7 +39,7 @@ public:
             {-.34, .34},    // tau
             {-.5, 1.25},    // vel
             {-.3, .75},     // accel
-            {-.34, .34}     // dtau
+            {-.20, .20}     // dtau
         };
 
         // local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
