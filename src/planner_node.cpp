@@ -245,7 +245,7 @@ private:
 
             float dist_to_dest = start.pose.distance_to(target.pose);
 
-            if (dist_to_dest < .4) {
+            if (dist_to_dest < .3) {
                 // Write a trajectory with 0 velocity
                 cev_msgs::msg::Trajectory current_plan;
 
