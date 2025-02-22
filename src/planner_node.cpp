@@ -42,8 +42,11 @@ public:
             {-.34, .34}     // dtau
         };
 
+        // local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
+        //     std::make_shared<cost_map::Nothing>(2, .5));
+
         local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-            std::make_shared<cost_map::Nothing>(2, .5));
+            std::make_shared<cost_map::NearestGenerator>(2, .5));
 
         global_planner = std::make_shared<global_planner::RRT>(dimensions, full_constraints);
 
