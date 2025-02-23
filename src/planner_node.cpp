@@ -149,6 +149,38 @@ private:
             std::cout << "Global Path Planned." << std::endl;
             global_path.waypoints = optional.value().waypoints;
 
+            // At each waypoint, find the angle by looking at the prev and next waypoint angles and
+            // averaging
+            for (int i = 1; i < global_path.waypoints.size() - 1; i++) {
+                State waypoint = global_path.waypoints[i];
+                State prev_waypoint = global_path.waypoints[i - 1];
+                State next_waypoint = global_path.waypoints[i + 1];
+
+                float angle_from_last = atan2(waypoint.pose.y - prev_waypoint.pose.y,
+                    waypoint.pose.x - prev_waypoint.pose.x);
+                float angle_to_next = atan2(next_waypoint.pose.y - waypoint.pose.y,
+                    next_waypoint.pose.x - waypoint.pose.x);
+
+                waypoint.pose.theta = (angle_from_last + angle_to_next) / 2;
+                global_path.waypoints[i] = waypoint;
+            }
+
+            // Last waypoint has the angle from the previous waypoint to this one
+            State last_waypoint = global_path.waypoints[global_path.waypoints.size() - 1];
+            State second_last_waypoint = global_path.waypoints[global_path.waypoints.size() - 2];
+
+            float angle_from_last = atan2(last_waypoint.pose.y - second_last_waypoint.pose.y,
+                last_waypoint.pose.x - second_last_waypoint.pose.x);
+
+            last_waypoint.pose.theta = angle_from_last;
+            global_path.waypoints[global_path.waypoints.size() - 1] = last_waypoint;
+
+            // All angles:
+            for (int i = 0; i < global_path.waypoints.size(); i++) {
+                std::cout << "Waypoint " << i << " Angle: " << global_path.waypoints[i].pose.theta
+                          << std::endl;
+            }
+
             // Publish global path
             nav_msgs::msg::Path global_nav_path;
             global_nav_path.header.stamp = this->now();
@@ -308,7 +340,7 @@ private:
 
             // std::cout << "I did not pass the target" << std::endl;
 
-            while (dist < .9
+            while (dist < .7
                    && current_waypoint_in_global
                           < global_path.waypoints.size()) {  // Progress waypoint
                 current_waypoint_in_global += 1;
@@ -331,10 +363,10 @@ private:
                 waypoints.waypoints.push_back(
                     global_path.waypoints[current_waypoint_in_global + 1]);
             }
-            if (current_waypoint_in_global < global_path.waypoints.size() - 2) {
-                waypoints.waypoints.push_back(
-                    global_path.waypoints[current_waypoint_in_global + 2]);
-            }
+            // if (current_waypoint_in_global < global_path.waypoints.size() - 2) {
+            //     waypoints.waypoints.push_back(
+            //         global_path.waypoints[current_waypoint_in_global + 2]);
+            // }
 
             waypoints.waypoints.push_back(target);
 
