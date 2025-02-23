@@ -37,8 +37,8 @@ public:
             {-1000, 1000},  // x
             {-1000, 1000},  // y
             {-.34, .34},    // tau
-            {-.5, 1.25},    // vel
-            {-.3, .75},     // accel
+            {-.5, .7},      // vel
+            {-.3, .6},      // accel
             {-.20, .20}     // dtau
         };
 
@@ -77,7 +77,7 @@ private:
     State prev_start = State();
     State target = State();
 
-    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(2, .5);
+    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(3, .8);
     cost_map::Nothing global_plan_cost_generator = cost_map::Nothing(1, .5);
 
     std::shared_ptr<cost_map::CostMap> local_plan_cost;
@@ -308,7 +308,7 @@ private:
 
             // std::cout << "I did not pass the target" << std::endl;
 
-            while (dist < 1.0
+            while (dist < .9
                    && current_waypoint_in_global
                           < global_path.waypoints.size()) {  // Progress waypoint
                 current_waypoint_in_global += 1;
@@ -320,18 +320,23 @@ private:
             // Give next two waypoints to target for planner
             Trajectory waypoints;
 
-            if (current_waypoint_in_global < global_path.waypoints.size() - 1) {
-                waypoints.waypoints.push_back(global_path.waypoints[current_waypoint_in_global]);
+            // If the current waypoint is the last waypoint, just give back the target
+            // If there is at least one waypoint after it, give those two waypoints
+            // If there are 2 waypoints after it, give 3
 
-                if ((current_waypoint_in_global + 1) < global_path.waypoints.size()) {
-                    waypoints.waypoints.push_back(
-                        global_path.waypoints[current_waypoint_in_global + 1]);
-                } else {
-                    waypoints.waypoints.push_back(target);
-                }
-            } else {
-                waypoints.waypoints.push_back(target);
+            if (current_waypoint_in_global < global_path.waypoints.size()) {
+                waypoints.waypoints.push_back(global_path.waypoints[current_waypoint_in_global]);
             }
+            if (current_waypoint_in_global < global_path.waypoints.size() - 1) {
+                waypoints.waypoints.push_back(
+                    global_path.waypoints[current_waypoint_in_global + 1]);
+            }
+            if (current_waypoint_in_global < global_path.waypoints.size() - 2) {
+                waypoints.waypoints.push_back(
+                    global_path.waypoints[current_waypoint_in_global + 2]);
+            }
+
+            waypoints.waypoints.push_back(target);
 
             // Fast forward last path to current position
             // for (int i = 0; i < last_path.waypoints.size(); i++) {
