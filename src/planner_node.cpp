@@ -37,8 +37,8 @@ public:
             {-1000, 1000},  // x
             {-1000, 1000},  // y
             {-.34, .34},    // tau
-            {-.5, 1.25},    // vel
-            {-.3, .75},     // accel
+            {-.5, 1.0},     // vel
+            {-.2, .5},      // accel
             {-.20, .20}     // dtau
         };
 
@@ -308,7 +308,7 @@ private:
 
             // std::cout << "I did not pass the target" << std::endl;
 
-            while (dist < 1.0
+            while (dist < .75
                    && current_waypoint_in_global
                           < global_path.waypoints.size()) {  // Progress waypoint
                 current_waypoint_in_global += 1;
