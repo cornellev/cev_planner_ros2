@@ -1,6 +1,6 @@
 [submodule "cev_planner"]
 	path = cev_planner
-	url = git@github.com:cornellev/cev_planner.git
+	url = https://github.com/cornellev/cev_planner.git
 [submodule "tmp/matplotlib-cpp"]
 	path = tmp/matplotlib-cpp
 	url = https://github.com/lava/matplotlib-cpp.git
