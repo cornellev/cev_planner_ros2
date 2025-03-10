@@ -3,6 +3,7 @@
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <eigen3/Eigen/Dense>
+#include "sensor_msgs/msg/laser_scan.hpp"
 #include <cev_msgs/msg/trajectory.hpp>
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
@@ -13,8 +14,8 @@
 #include "local_planning/mpc.h"
 #include "global_planning/rrt.h"
 #include "cost_map/gaussian_conv.h"
-#include "cost_map/nearest.h"
-#include "cost_map/nothing.h"
+#include "cost_map/scan.h"
+#include "cost_map/global.h"
 
 using namespace cev_planner;
 
@@ -24,15 +25,6 @@ public:
         RCLCPP_INFO(this->get_logger(), "Initializing planner node");
 
         Dimensions dimensions = Dimensions{.3, .3, .3};
-        Constraints positive_constraints = Constraints{
-            {-1000, 1000},  // x
-            {-1000, 1000},  // y
-            {-.34, .34},    // tau
-            {0, .5},        // vel
-            {0, .25},       // accel
-            {-.34, .34}     // dtau
-        };
-
         Constraints full_constraints = Constraints{
             {-1000, 1000},  // x
             {-1000, 1000},  // y
@@ -43,7 +35,7 @@ public:
         };
 
         // local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
-        //     std::make_shared<cost_map::Nothing>(2, .5));
+        //     std::make_shared<cost_map::GlobalCostMapGenerator>(2, .5));
 
         local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints);
         global_planner = std::make_shared<global_planner::RRT>(dimensions, full_constraints);
@@ -58,6 +50,9 @@ public:
             std::bind(&PlannerNode::target_callback, this, std::placeholders::_1));
 
         path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("trajectory", 1);
+
+        scan_sub = this->create_subscription<sensor_msgs::msg::LaserScan>("/scan", 1,
+            std::bind(&PlannerNode::scan_callback, this, std::placeholders::_1));
 
         // Global plan every 2 seconds
         // global_plan_timer = this->create_wall_timer(std::chrono::milliseconds(2000),
@@ -77,8 +72,10 @@ private:
     State prev_start = State();
     State target = State();
 
-    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(2, .5);
-    cost_map::Nothing global_plan_cost_generator = cost_map::Nothing(1, .5);
+    cost_map::ScanCostMapGenerator local_plan_cost_generator = cost_map::ScanCostMapGenerator(2, .5,
+        10, 40);
+    cost_map::GlobalCostMapGenerator global_plan_cost_generator =
+        cost_map::GlobalCostMapGenerator(1);
 
     std::shared_ptr<cost_map::CostMap> local_plan_cost;
     std::shared_ptr<cost_map::CostMap> global_plan_cost;
@@ -122,6 +119,9 @@ private:
     // Publisher for the planned path
     rclcpp::Publisher<cev_msgs::msg::Trajectory>::SharedPtr path_pub;
 
+    // Scan subscriber
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr scan_sub;
+
     // Wall timer for global plan
     // rclcpp::TimerBase::SharedPtr global_plan_timer;
 
@@ -129,6 +129,9 @@ private:
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr global_path_pub;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr local_path_pub;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_rviz_sub;
+
+    // TRANSFORMED SCAN
+    Grid* scan = nullptr;
 
     float avg_costmap_time = 0;
     int cost_map_iters = 0;
@@ -271,7 +274,7 @@ private:
             // std::cout << "Global Path: " << global_path_initialized << std::endl;
         }
 
-        // float moved_dist = start.pose.distance_to(prev_start.pose);
+        float moved_dist = start.pose.distance_to(prev_start.pose);
 
         if (map_initialized && odom_initialized && target_initialized && global_path_initialized) {
             // std::cout << "I am entering the local planning loop." << std::endl;
@@ -349,9 +352,13 @@ private:
             Trajectory path = local_planner->plan_path(grid, start, target, waypoints, last_path,
                 local_plan_cost);
 
-            if (path.cost >= prev_path_cost
-                || hits_obstacle(path)) {  // Worse path and hasn't targeted next waypoint
-                // std::cout << "Worse path" << std::endl;
+            // if (path.cost >= prev_path_cost) {
+            //     if (!(moved_dist > .5 && path.cost < (prev_path_cost * 1.1))) {
+            //         return;
+            //     }
+            // }
+
+            if (path.cost >= prev_path_cost || hits_obstacle(path)) {
                 return;
             }
 
@@ -419,6 +426,15 @@ private:
 
         grid.data = Eigen::MatrixXf(msg->info.width, msg->info.height);
 
+        // Iterate through transformed scan, adding to the occupancy grid according to resultion and
+        // coordinates
+
+        for (int i = 0; i < msg->info.width; i++) {
+            for (int j = 0; j < msg->info.height; j++) {
+                grid.data(i, j) = 0.0;
+            }
+        }
+
         for (int i = 0; i < msg->info.width; i++) {
             for (int j = 0; j < msg->info.height; j++) {
                 // Divide by 100 to get probability of occupancy in the range [0, 1]
@@ -436,7 +452,7 @@ private:
         map_initialized = true;
 
         // auto start_time = std::chrono::high_resolution_clock::now();
-        local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
+        local_plan_cost = local_plan_cost_generator.generate_cost_map(grid, scan);
         global_plan_cost = global_plan_cost_generator.generate_cost_map(grid);
         // auto end_time = std::chrono::high_resolution_clock::now();
         // avg_costmap_time +=
@@ -450,6 +466,87 @@ private:
         //     avg_costmap_time = 0;
         //     cost_map_iters = 0;
         // }
+    }
+
+    void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
+        std::cout << "I received a scan." << std::endl;
+
+        try {
+            float max_x = 0;
+            float min_x = 0;
+            float max_y = 0;
+            float min_y = 0;
+
+            // Get the transform from scan frame to map frame
+            geometry_msgs::msg::TransformStamped transform = tf_buffer_.lookupTransform("map",
+                msg->header.frame_id, rclcpp::Time(0));
+
+            std::vector<std::pair<float, float>> transformed_scan;
+
+            for (size_t i = 0; i < msg->ranges.size(); ++i) {
+                if (std::isfinite(msg->ranges[i])) {
+                    // Create a point in the laser scan frame
+                    float laser_x = msg->ranges[i]
+                                    * std::cos(msg->angle_min + i * msg->angle_increment);
+                    float laser_y = msg->ranges[i]
+                                    * std::sin(msg->angle_min + i * msg->angle_increment);
+
+                    // Transform the point to the map frame
+                    geometry_msgs::msg::Point32 laser_point;
+                    laser_point.x = laser_x;
+                    laser_point.y = laser_y;
+                    laser_point.z = 0.0;
+
+                    geometry_msgs::msg::Point32 transformed_point;
+                    tf2::doTransform(laser_point, transformed_point, transform);
+
+                    // Find scan bounds
+                    if (transformed_point.x > max_x) {
+                        max_x = transformed_point.x;
+                    } else if (transformed_point.x < min_x) {
+                        min_x = transformed_point.x;
+                    }
+
+                    if (transformed_point.y > max_y) {
+                        max_y = transformed_point.y;
+                    } else if (transformed_point.y < min_y) {
+                        min_y = transformed_point.y;
+                    }
+
+                    // Store the transformed coordinates as floats in the vector
+                    transformed_scan.push_back({transformed_point.x, transformed_point.y});
+                }
+            }
+
+            // Make a new grid with the scan bounds
+            delete scan;
+            scan = new Grid();
+            scan->origin = start.pose;
+            scan->resolution = grid.resolution;
+
+            // Populate the scan grid with the transformed scan
+            scan->data = Eigen::MatrixXf((int)((max_x - min_x) / grid.resolution),
+                (int)((max_y - min_y) / grid.resolution));
+
+            for (int i = 0; i < scan->data.rows(); i++) {
+                for (int j = 0; j < scan->data.cols(); j++) {
+                    scan->data(i, j) = 0.0;
+                }
+            }
+
+            for (std::pair<float, float> point: transformed_scan) {
+                int x = (point.first - scan->origin.x) / scan->resolution;
+                int y = (point.second - scan->origin.y) / scan->resolution;
+
+                if (x >= 0 && x < scan->data.rows() && y >= 0 && y < scan->data.cols()) {
+                    scan->data(x, y) = 1.0;
+                }
+            }
+
+            std::cout << "Transformed scan size: " << transformed_scan.size() << std::endl;
+        } catch (tf2::TransformException& ex) {
+            RCLCPP_WARN(this->get_logger(), "Transform warning: %s", ex.what());
+        }
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
