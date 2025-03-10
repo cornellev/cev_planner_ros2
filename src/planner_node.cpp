@@ -37,8 +37,8 @@ public:
             {-1000, 1000},  // x
             {-1000, 1000},  // y
             {-.34, .34},    // tau
-            {-.5, 1.0},     // vel
-            {-.2, .5},      // accel
+            {-1.0, 1.0},    // vel
+            {-.5, .5},      // accel
             {-.20, .20}     // dtau
         };
 
@@ -135,6 +135,8 @@ private:
     float avg_planning_time = 0;
     int planning_iters = 0;
 
+    std::chrono::_V2::system_clock::time_point start_time =
+        std::chrono::high_resolution_clock::now();
     // -------------------------------
 
     void global_plan_callback() {
@@ -344,21 +346,8 @@ private:
             // }
 
             // std::cout << "Planning local path" << std::endl;
-            auto start_time = std::chrono::high_resolution_clock::now();
             Trajectory path = local_planner->plan_path(grid, start, target, waypoints, last_path,
                 local_plan_cost);
-            auto end_time = std::chrono::high_resolution_clock::now();
-            avg_planning_time += std::chrono::duration_cast<std::chrono::milliseconds>(end_time
-                                                                                       - start_time)
-                                     .count();
-            planning_iters += 1;
-
-            if (planning_iters > 50) {
-                std::cout << "Average planning time: " << avg_planning_time / planning_iters << "ms"
-                          << std::endl;
-                avg_planning_time = 0;
-                planning_iters = 0;
-            }
 
             if (path.cost >= prev_path_cost
                 || hits_obstacle(path)) {  // Worse path and hasn't targeted next waypoint
@@ -366,6 +355,16 @@ private:
                 return;
             }
 
+            std::chrono::_V2::system_clock::time_point end_time =
+                std::chrono::high_resolution_clock::now();
+
+            avg_planning_time = std::chrono::duration_cast<std::chrono::milliseconds>(end_time
+                                                                                      - start_time)
+                                    .count();
+
+            std::cout << "Planning Update Time: " << avg_planning_time << "ms" << std::endl;
+
+            start_time = std::chrono::high_resolution_clock::now();
             // std::cout << "Better path" << std::endl;
 
             last_path = path;
