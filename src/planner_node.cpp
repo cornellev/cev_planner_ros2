@@ -44,6 +44,8 @@ public:
         map_sub = this->create_subscription<nav_msgs::msg::OccupancyGrid>("map", 1,
             std::bind(&PlannerNode::map_callback, this, std::placeholders::_1));
 
+        cost_map_pub = this->create_publisher<nav_msgs::msg::OccupancyGrid>("cost_map", 1);
+
         odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odometry/filtered", 1,
             std::bind(&PlannerNode::odom_callback, this, std::placeholders::_1));
 
@@ -114,6 +116,8 @@ private:
 
     // Listener to the map
     rclcpp::Subscription<nav_msgs::msg::OccupancyGrid>::SharedPtr map_sub;
+
+    rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr cost_map_pub;
 
     // Listener to odom
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
@@ -482,10 +486,81 @@ private:
         //     avg_costmap_time = 0;
         //     cost_map_iters = 0;
         // }
+
+        // Convert local plan cost map to an occupancy grid message and publish
+        nav_msgs::msg::OccupancyGrid cost_map_msg;
+        cost_map_msg.header.stamp = this->now();
+        cost_map_msg.header.frame_id = "map";
+        cost_map_msg.info.resolution = grid.resolution;
+        cost_map_msg.info.width = grid.data.cols();
+        cost_map_msg.info.height = grid.data.rows();
+        cost_map_msg.info.origin.position.x = grid.origin.x;
+        cost_map_msg.info.origin.position.y = grid.origin.y;
+        cost_map_msg.info.origin.position.z = 0;
+        cost_map_msg.info.origin.orientation.x = 0;
+        cost_map_msg.info.origin.orientation.y = 0;
+        cost_map_msg.info.origin.orientation.z = 0;
+        cost_map_msg.info.origin.orientation.w = 1;
+
+        cost_map_msg.data.clear();
+
+        // std::cout << "Num rows:" << grid.data.rows() << std::endl;
+        // std::cout << "Num cols:" << grid.data.cols() << std::endl;
+
+        int largest_val = 0;
+
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                if (grid.data(i, j) > largest_val) {
+                    largest_val = grid.data(i, j);
+                }
+            }
+        }
+
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                cost_map_msg.data.push_back((int)((local_plan_cost->debug_(i, j) / largest_val)
+                                                  * 100));
+            }
+        }
+        nav_msgs::msg::OccupancyGrid mirrored_msg;
+        mirrored_msg.header.stamp = this->now();
+        mirrored_msg.header.frame_id = "map";
+        mirrored_msg.info.resolution = grid.resolution;
+        mirrored_msg.info.width = grid.data.rows();
+        mirrored_msg.info.height = grid.data.cols();
+        mirrored_msg.info.origin.position.z = 0;
+        mirrored_msg.info.origin.orientation.x = 0;
+        mirrored_msg.info.origin.orientation.y = 0;
+        mirrored_msg.info.origin.orientation.z = 0;
+        mirrored_msg.info.origin.orientation.w = 1;
+
+        mirrored_msg.data.clear();
+
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                mirrored_msg.data.push_back(0);
+            }
+        }
+
+        for (int y = 0; y < cost_map_msg.info.height; ++y) {
+            for (int x = 0; x < cost_map_msg.info.width; ++x) {
+                int new_x = y;
+                int new_y = x;
+                mirrored_msg.data[new_y * cost_map_msg.info.height + new_x] =
+                    cost_map_msg.data[y * cost_map_msg.info.width + x];
+            }
+        }
+
+        // Swap the origin x and y
+        mirrored_msg.info.origin.position.x = cost_map_msg.info.origin.position.x;
+        mirrored_msg.info.origin.position.y = cost_map_msg.info.origin.position.y;
+
+        cost_map_pub->publish(mirrored_msg);
     }
 
     void scan_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg) {
-        std::cout << "I received a scan." << std::endl;
+        // std::cout << "I received a scan." << std::endl;
 
         try {
             float max_x = 0;
@@ -559,7 +634,7 @@ private:
                 }
             }
 
-            std::cout << "Transformed scan size: " << transformed_scan.size() << std::endl;
+            // std::cout << "Transformed scan size: " << transformed_scan.size() << std::endl;
         } catch (tf2::TransformException& ex) {
             RCLCPP_WARN(this->get_logger(), "Transform warning: %s", ex.what());
         }
@@ -575,7 +650,7 @@ private:
     }
 
     void rviz_target_callback(const geometry_msgs::msg::PoseStamped msg) {
-        std::cout << "I received a target." << std::endl;
+        // std::cout << "I received a target." << std::endl;
 
         current_waypoint_in_global = 0;
         global_path_initialized = false;
