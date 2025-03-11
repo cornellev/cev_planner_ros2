@@ -5,6 +5,7 @@
 #include <eigen3/Eigen/Dense>
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include <cev_msgs/msg/trajectory.hpp>
+#include <cev_msgs/msg/sensor_collect.hpp>
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -45,6 +46,10 @@ public:
 
         odom_sub = this->create_subscription<nav_msgs::msg::Odometry>("/odometry/filtered", 1,
             std::bind(&PlannerNode::odom_callback, this, std::placeholders::_1));
+
+        sensor_collect_sub =
+            this->create_subscription<cev_msgs::msg::SensorCollect>("sensor_collect", 1,
+                std::bind(&PlannerNode::sensor_collect_callback, this, std::placeholders::_1));
 
         target_sub = this->create_subscription<cev_msgs::msg::Waypoint>("target", 1,
             std::bind(&PlannerNode::target_callback, this, std::placeholders::_1));
@@ -113,6 +118,9 @@ private:
     // Listener to odom
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr odom_sub;
 
+    // Listener to sensor collect
+    rclcpp::Subscription<cev_msgs::msg::SensorCollect>::SharedPtr sensor_collect_sub;
+
     // Listener to the target
     rclcpp::Subscription<cev_msgs::msg::Waypoint>::SharedPtr target_sub;
 
@@ -141,6 +149,10 @@ private:
     std::chrono::_V2::system_clock::time_point start_time =
         std::chrono::high_resolution_clock::now();
     // -------------------------------
+
+    void sensor_collect_callback(const cev_msgs::msg::SensorCollect::SharedPtr msg) {
+        start.tau = msg->steering_angle;
+    }
 
     void global_plan_callback() {
         std::cout << "I am attempting a global plan." << std::endl;
@@ -361,6 +373,10 @@ private:
             if (path.cost >= prev_path_cost || hits_obstacle(path)) {
                 return;
             }
+
+            // if (hits_obstacle(path)) {
+            //     return;
+            // }
 
             std::chrono::_V2::system_clock::time_point end_time =
                 std::chrono::high_resolution_clock::now();
