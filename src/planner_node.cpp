@@ -24,23 +24,43 @@ public:
         RCLCPP_INFO(this->get_logger(), "Initializing planner node");
 
         Dimensions dimensions = Dimensions{.3, .3, .3};
-        Constraints positive_constraints = Constraints{
-            {-1000, 1000},  // x
-            {-1000, 1000},  // y
-            {-.34, .34},    // tau
-            {0, .5},        // vel
-            {0, .25},       // accel
-            {-.34, .34}     // dtau
-        };
+        // Default values if not run with config file
+        // Constraints positive_constraints = Constraints{
+        //     {-1000, 1000},  // x
+        //     {-1000, 1000},  // y
+        //     {-.34, .34},    // tau
+        //     {0, .5},        // vel
+        //     {0, .25},       // accel
+        //     {-.34, .34}     // dtau
+        // };
 
+        // Default values if not run with config file
         Constraints full_constraints = Constraints{
-            {-1000, 1000},  // x
-            {-1000, 1000},  // y
+            {-1000.0, 1000.0},  // x
+            {-1000.0, 1000.0},  // y
             {-.34, .34},    // tau
             {-1.0, 1.0},    // vel
             {-.5, .5},      // accel
             {-.20, .20}     // dtau
         };
+
+        auto safe_load = [&](auto &target, const char* name){
+            try { 
+                this->declare_parameter(name, rclcpp::PARAMETER_DOUBLE_ARRAY);
+                rclcpp::Parameter param = this->get_parameter(name);
+                auto v = param.as_double_array(); 
+                target[0] = v[0]; target[1] = v[1];
+            }
+            catch (...) { RCLCPP_WARN(this->get_logger(), "Failed to load %s constraint, using default values (%f, %f).", name, target[0], target[1]); }
+        };
+
+        safe_load(full_constraints.x, "x");
+        safe_load(full_constraints.y, "y");
+        safe_load(full_constraints.tau, "tau");
+        safe_load(full_constraints.vel, "vel");
+        safe_load(full_constraints.accel, "accel");
+        safe_load(full_constraints.dtau, "dtau");
+
 
         // local_planner = std::make_shared<local_planner::MPC>(dimensions, full_constraints,
         //     std::make_shared<cost_map::Nothing>(2, .5));

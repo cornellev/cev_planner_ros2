@@ -1,0 +1,17 @@
+planner_node:
+  ros__parameters:
+    x: [-1000.0, 1000.0]
+    y: [-1000.0, 1000.0]
+    tau: [-.34, .34]
+    vel: [-1.0, 1.0]
+    accel: [-.5, .5]
+    dtau: [-.20, .20]
+
+cev_planner_ros2_node:
+  ros__parameters:
+    x: [-1000.0, 1000.0]
+    y: [-1000.0, 1000.0]
+    tau: [-.34, .34]
+    vel: [-1.0, 1.0]
+    accel: [-.5, .5]
+    dtau: [-.20, .20]
