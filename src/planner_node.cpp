@@ -9,12 +9,15 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/utils.h"
 #include <iostream>
+#include <memory>
 
 #include "local_planning/mpc.h"
 #include "global_planning/rrt.h"
 #include "cost_map/gaussian_conv.h"
 #include "cost_map/nearest.h"
 #include "cost_map/nothing.h"
+#include "cost_map/dist_map.h"
+#include "cost_finder/cost_finder.h"
 
 using namespace cev_planner;
 
@@ -69,6 +72,8 @@ public:
 
         target_rviz_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>("goal_pose", 1,
             std::bind(&PlannerNode::rviz_target_callback, this, std::placeholders::_1));
+
+        // cost_map_pub_ = this->create_publisher<nav_msgs::msg::OccupancyGrid>("planner/cost_map", 1);
     }
 
 private:
@@ -77,10 +82,14 @@ private:
     State prev_start = State();
     State target = State();
 
-    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(2, .5);
+    //cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(2, .5);
+    // cost_map::DistGenerator local_plan_cost_generator = cost_map::DistGenerator(10, 20);
+    std::shared_ptr<cost_finder::CostFinder> local_plan_cost =
+        std::make_shared<cost_finder::CostFinder>(10, 20);
     cost_map::Nothing global_plan_cost_generator = cost_map::Nothing(1, .5);
 
-    std::shared_ptr<cost_map::CostMap> local_plan_cost;
+    // std::shared_ptr<cost_map::CostMap> local_plan_cost;
+    // std::shared_ptr<cev_planner::cost_finder::CostFinder> local_plan_cost;
     std::shared_ptr<cost_map::CostMap> global_plan_cost;
     bool cost_map_initialized = false;
 
@@ -435,8 +444,104 @@ private:
 
         map_initialized = true;
 
+        // std::cout << "map_callback: grid size (rows,cols): " << grid.data.rows() << "," << grid.data.cols() << std::endl;
+
         // auto start_time = std::chrono::high_resolution_clock::now();
-        local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
+        // local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
+        // local_plan_cost = std::make_shared<cev_planner::cost_finder::CostFinder>(10, 20);
+        
+        nav_msgs::msg::OccupancyGrid cost_map_msg;
+        cost_map_msg.header.stamp = this->now();
+        cost_map_msg.header.frame_id = "map";
+        cost_map_msg.info.resolution = grid.resolution;
+        cost_map_msg.info.width = grid.data.cols();
+        cost_map_msg.info.height = grid.data.rows();
+        cost_map_msg.info.origin.position.x = grid.origin.x;
+        cost_map_msg.info.origin.position.y = grid.origin.y;
+        cost_map_msg.info.origin.position.z = 0;
+        cost_map_msg.info.origin.orientation.x = 0;
+        cost_map_msg.info.origin.orientation.y = 0;
+        cost_map_msg.info.origin.orientation.z = 0;
+        cost_map_msg.info.origin.orientation.w = 1;
+
+        cost_map_msg.data.clear();
+
+        /*
+        int largest_val = 0;
+        
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                std::cout << "Check? " << i << " " << j << " " << grid.data(i, j) << " " << largest_val << "\n";
+                if (grid.data(i, j) > largest_val) {
+                    largest_val = grid.data(i, j);
+                }
+            }
+        }
+        */
+
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                // std::cout << i*grid.resolution+grid.origin.x << " " << j*grid.resolution+grid.origin.y << "\n";
+                //if (i >= 80) std::cout << "Cost Normalized " << i << " " << j << " " << local_plan_cost->cost({i, j}) << "\n"; 
+                //cost_map_msg.data.push_back((local_plan_cost->cost({i, j})/largest_val));
+                // cost_map_msg.data.push_back(local_plan_cost->cost({i, j}));
+                if (grid.data(i, j) > 0.7f) {  // Threshold for occupied cells
+                    double x = grid.origin.x + i * grid.resolution;
+                    double y = grid.origin.y + j * grid.resolution;
+                    if (local_plan_cost) {
+                        local_plan_cost->addPoint(State{x, y});
+                    }
+                }
+                                                  
+                // std::cout<<local_plan_cost->cost({i*grid.resolution+grid.origin.x, j*grid.resolution+grid.origin.y})<<std::endl;
+            }
+        }
+        nav_msgs::msg::OccupancyGrid mirrored_msg;
+        mirrored_msg.header.stamp = this->now();
+        mirrored_msg.header.frame_id = "map";
+        mirrored_msg.info.resolution = grid.resolution;
+        mirrored_msg.info.width = grid.data.rows();
+        mirrored_msg.info.height = grid.data.cols();
+        mirrored_msg.info.origin.position.z = 0;
+        mirrored_msg.info.origin.orientation.x = 0;
+        mirrored_msg.info.origin.orientation.y = 0;
+        mirrored_msg.info.origin.orientation.z = 0;
+        mirrored_msg.info.origin.orientation.w = 1;
+
+        mirrored_msg.data.clear();
+
+        for (int i = 0; i < grid.data.rows(); i++) {
+            for (int j = 0; j < grid.data.cols(); j++) {
+                // mirrored_msg.data.push_back(0);
+                double x = grid.origin.x + i * grid.resolution;
+                double y = grid.origin.y + j * grid.resolution;
+                double c = 0.0;
+                if (local_plan_cost) {
+                    try {
+                        c = local_plan_cost->cost(State{x, y});
+                    } catch (const std::exception &e) {
+                        std::cerr << "CostFinder::cost threw: " << e.what() << std::endl;
+                        c = 0.0;
+                    }
+                }
+                cost_map_msg.data.push_back(c);
+            }
+        }
+
+        // // Debug visualization code - commented out
+        // mirrored_msg.data.resize(cost_map_msg.info.height * cost_map_msg.info.width, 0);
+        // for (int y = 0; y < cost_map_msg.info.height; ++y) {
+        //     for (int x = 0; x < cost_map_msg.info.width; ++x) {
+        //         int new_x = y;
+        //         int new_y = x;
+        //         mirrored_msg.data[new_y * cost_map_msg.info.height + new_x] =
+        //             cost_map_msg.data[y * cost_map_msg.info.width + x];
+        //     }
+        // }
+        // mirrored_msg.info.origin.position.x = cost_map_msg.info.origin.position.x;
+        // mirrored_msg.info.origin.position.y = cost_map_msg.info.origin.position.y;
+        // cost_map_pub_->publish(mirrored_msg);
+
         global_plan_cost = global_plan_cost_generator.generate_cost_map(grid);
         // auto end_time = std::chrono::high_resolution_clock::now();
         // avg_costmap_time +=
@@ -471,6 +576,7 @@ private:
         second_iteration_passed = false;
         target_initialized = true;
     }
+    // rclcpp::Publisher<nav_msgs::msg::OccupancyGrid>::SharedPtr cost_map_pub_;
 };
 
 int main(int argc, char** argv) {
