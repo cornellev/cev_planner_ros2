@@ -15,7 +15,6 @@
 #include "cost_map/gaussian_conv.h"
 #include "cost_map/nearest.h"
 #include "cost_map/nothing.h"
-#include "cost_finder/cost_finder.h"
 
 using namespace cev_planner;
 
@@ -98,10 +97,10 @@ private:
     State prev_start = State();
     State target = State();
 
-    std::shared_ptr<cost_finder::CostFinder> local_plan_cost =
-        std::make_shared<cost_finder::CostFinder>(10, 20);
+    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(2, .5);
     cost_map::Nothing global_plan_cost_generator = cost_map::Nothing(1, .5);
 
+    std::shared_ptr<cost_map::CostMap> local_plan_cost;
     std::shared_ptr<cost_map::CostMap> global_plan_cost;
     bool cost_map_initialized = false;
 
@@ -456,16 +455,7 @@ private:
 
         map_initialized = true;
 
-        local_plan_cost = std::make_shared<cost_finder::CostFinder>(10, 20);
-        for (int i = 0; i < grid.data.rows(); i++) {
-            for (int j = 0; j < grid.data.cols(); j++) {
-                double x = grid.origin.x + i * grid.resolution;
-                double y = grid.origin.y + j * grid.resolution;
-                if (local_plan_cost) {
-                    local_plan_cost->addPoint(State{x, y});
-                }
-            }
-        }
+        local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
         global_plan_cost = global_plan_cost_generator.generate_cost_map(grid);
     }
 

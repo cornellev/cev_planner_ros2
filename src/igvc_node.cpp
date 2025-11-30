@@ -16,9 +16,6 @@
 #include "cost_map/gaussian_conv.h"
 #include "cost_map/nearest.h"
 #include "cost_map/nothing.h"
-#include "cost_map/dist_map.h"
-#include "cost_finder/cost_finder.h"
-#include "cev_msgs/srv/query_costmap.hpp"
 
 using namespace cev_planner;
 
@@ -27,7 +24,7 @@ public:
     PlannerNode(): Node("planner_node"), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_) {
         RCLCPP_INFO(this->get_logger(), "Initializing planner node");
 
-        Dimensions dimensions = Dimensions{.3, .3, .3};
+        Dimensions dimensions = Dimensions{0.4572, 0.4445, 0.456};
         full_constraints = Constraints{
             {-1000.0, 1000.0},  // x
             {-1000.0, 1000.0},  // y
@@ -42,12 +39,12 @@ public:
                 this->declare_parameter(name, rclcpp::PARAMETER_DOUBLE_ARRAY);
                 rclcpp::Parameter param = this->get_parameter(name);
                 auto v = param.as_double_array();
-                target[0] = v[0];
-                target[1] = v[1];
+                for (int i = 0; i < v.size(); i++) target[i] = v[i];
             } 
             catch (...) { RCLCPP_WARN(this->get_logger(), "Failed to load %s constraint, using default values (%f, %f).", name, target[0], target[1]); }
         };
 
+        // safe_load(dimensions, "dimensions"); Todo this
         safe_load(full_constraints.x, "x");
         safe_load(full_constraints.y, "y");
         safe_load(full_constraints.tau, "tau");
@@ -78,11 +75,6 @@ public:
 
         target_rviz_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>("goal_pose", 1,
             std::bind(&PlannerNode::rviz_target_callback, this, std::placeholders::_1));
-
-        costmap_query_service_ = this->create_service<cev_msgs::srv::QueryCostmap>(
-            "/query_costmap",
-            std::bind(&PlannerNode::handle_costmap_query, this,
-                std::placeholders::_1, std::placeholders::_2));
     }
 
 private:
@@ -91,10 +83,8 @@ private:
     State start = State();
     State goal_state = State();
 
-    std::shared_ptr<cost_finder::CostFinder> local_plan_cost =
-        std::make_shared<cost_finder::CostFinder>(5, 10);
-    // cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(3.5, 1);
-    // std::shared_ptr<cost_map::CostMap> local_plan_cost;
+    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(3.5, 1);
+    std::shared_ptr<cost_map::CostMap> local_plan_cost;
 
     bool map_initialized = false;
     bool mission_active = false;
@@ -118,7 +108,6 @@ private:
     rclcpp::Publisher<cev_msgs::msg::Trajectory>::SharedPtr path_pub;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr local_path_pub;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_rviz_sub;
-    rclcpp::Service<cev_msgs::srv::QueryCostmap>::SharedPtr costmap_query_service_;
 
     Trajectory lane_centerline_;
     int lane_reference_index_ = 0;
@@ -169,42 +158,6 @@ private:
             lane_wp.pose.y = wp.y;
             lane_wp.pose.theta = wp.theta;
             lane_centerline_.waypoints.push_back(lane_wp);
-        }
-    }
-
-    void handle_costmap_query(
-        const std::shared_ptr<cev_msgs::srv::QueryCostmap::Request> request,
-        std::shared_ptr<cev_msgs::srv::QueryCostmap::Response> response) {
-        if (!local_plan_cost) {
-            response->success = false;
-            response->message = "costmap unavailable";
-            response->cost = 0.0;
-            return;
-        }
-
-        State probe;
-        probe.pose.x = request->x;
-        probe.pose.y = request->y;
-        probe.pose.theta = request->theta;
-        probe.tau = 0.0;
-        probe.vel = 0.0;
-
-        try {
-            const double value = local_plan_cost->cost(probe);
-            if (value >= std::numeric_limits<double>::max() * 0.5) {
-                response->success = false;
-                response->message = "out_of_bounds";
-                response->cost = 0.0;
-                return;
-            }
-
-            response->cost = value;
-            response->success = true;
-            response->message.clear();
-        } catch (const std::exception& ex) {
-            response->success = false;
-            response->message = ex.what();
-            response->cost = 0.0;
         }
     }
 
@@ -331,18 +284,14 @@ private:
         Trajectory path = local_planner->plan_path(grid, start, waypoint_targets.waypoints.at(current_waypoint_index), waypoint_targets,
             last_path, local_plan_cost);
 
-        // Just use old path if new path has worse cost and we still near beginning of old path
-        if (path.cost > prev_path_cost) {
-            if (last_path.waypoints.empty()) {
-                return;
-            } else {
-                auto nearest = nearest_waypoint(start.pose, last_path);
-                if (nearest.first <= 2 &&
-                    nearest.second <= 3 * last_path.waypoints[1].pose.distance_to(last_path.waypoints[0].pose)) {
-                    return;
-                }
-            }
-        }
+        // Just use old path if we still near beginning of old path
+        // if (!last_path.waypoints.empty()) {
+        //     auto nearest = nearest_waypoint(start.pose, last_path);
+        //     if (nearest.first < 1 &&
+        //         nearest.second <= 3 * last_path.waypoints[1].pose.distance_to(last_path.waypoints[0].pose)) {
+        //         return;
+        //     }
+        // }
 
         // Update the planning time
         auto end_time = std::chrono::high_resolution_clock::now();
@@ -420,15 +369,7 @@ private:
         }
 
         map_initialized = true;
-        for (int i = 0; i < grid.data.rows(); i++) {
-            for (int j = 0; j < grid.data.cols(); j++) {
-                double x = grid.origin.x + i * grid.resolution;
-                double y = grid.origin.y + j * grid.resolution;
-                if (local_plan_cost) {
-                    local_plan_cost->addPoint(State{x, y});
-                }
-            }
-        }
+        local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
