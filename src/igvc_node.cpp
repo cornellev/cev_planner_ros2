@@ -1,9 +1,12 @@
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
+#include <nav_msgs/msg/map_meta_data.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <nav_msgs/msg/path.hpp>
 #include <eigen3/Eigen/Dense>
 #include <cev_msgs/msg/trajectory.hpp>
+#include <std_msgs/msg/float32_multi_array.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
@@ -16,6 +19,7 @@
 #include "cost_map/gaussian_conv.h"
 #include "cost_map/nearest.h"
 #include "cost_map/nothing.h"
+#include "cost_map/euclidean.h"
 
 using namespace cev_planner;
 
@@ -69,9 +73,16 @@ public:
         lane_centerline_sub = this->create_subscription<cev_msgs::msg::Trajectory>("/igvc_lane", 1,
             std::bind(&PlannerNode::lane_centerline_callback, this, std::placeholders::_1));
 
+        lane_cost_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>("lane_cost_weights", 5,
+            std::bind(&PlannerNode::lane_cost_callback, this, std::placeholders::_1));
+
         path_pub = this->create_publisher<cev_msgs::msg::Trajectory>("trajectory", 1);
 
         local_path_pub = this->create_publisher<nav_msgs::msg::Path>("local_path", 1);
+
+        auto costmap_qos = rclcpp::QoS(rclcpp::KeepLast(1)).reliable().transient_local();
+        costmap_meta_pub = this->create_publisher<nav_msgs::msg::MapMetaData>("local_costmap_meta", costmap_qos);
+        costmap_raw_pub = this->create_publisher<std_msgs::msg::Float32MultiArray>("local_costmap_raw", costmap_qos);
 
         target_rviz_sub = this->create_subscription<geometry_msgs::msg::PoseStamped>("goal_pose", 1,
             std::bind(&PlannerNode::rviz_target_callback, this, std::placeholders::_1));
@@ -83,7 +94,7 @@ private:
     State start = State();
     State goal_state = State();
 
-    cost_map::NearestGenerator local_plan_cost_generator = cost_map::NearestGenerator(3.5, 1);
+    cost_map::Euclidean local_plan_cost_generator = cost_map::Euclidean();
     std::shared_ptr<cost_map::CostMap> local_plan_cost;
 
     bool map_initialized = false;
@@ -104,9 +115,12 @@ private:
     rclcpp::Subscription<cev_msgs::msg::Waypoint>::SharedPtr target_sub;
     rclcpp::Subscription<cev_msgs::msg::Trajectory>::SharedPtr trajectory_sub;
     rclcpp::Subscription<cev_msgs::msg::Trajectory>::SharedPtr lane_centerline_sub;
+    rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr lane_cost_sub;
 
     rclcpp::Publisher<cev_msgs::msg::Trajectory>::SharedPtr path_pub;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr local_path_pub;
+    rclcpp::Publisher<nav_msgs::msg::MapMetaData>::SharedPtr costmap_meta_pub;
+    rclcpp::Publisher<std_msgs::msg::Float32MultiArray>::SharedPtr costmap_raw_pub;
     rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_rviz_sub;
 
     Trajectory lane_centerline_;
@@ -115,6 +129,49 @@ private:
     float avg_planning_time = 0;
     std::chrono::_V2::system_clock::time_point start_time =
         std::chrono::high_resolution_clock::now();
+
+    void publish_costmap_raw(const Grid& cost_grid, const builtin_interfaces::msg::Time& stamp) {
+        if (!costmap_meta_pub || !costmap_raw_pub) {
+            return;
+        }
+        const int width = cost_grid.data.rows();
+        const int height = cost_grid.data.cols();
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        nav_msgs::msg::MapMetaData meta;
+        meta.map_load_time = stamp;
+        meta.resolution = static_cast<float>(cost_grid.resolution);
+        meta.width = static_cast<uint32_t>(width);
+        meta.height = static_cast<uint32_t>(height);
+        meta.origin.position.x = cost_grid.origin.x;
+        meta.origin.position.y = cost_grid.origin.y;
+        meta.origin.position.z = 0.0;
+        meta.origin.orientation.x = 0.0;
+        meta.origin.orientation.y = 0.0;
+        meta.origin.orientation.z = 0.0;
+        meta.origin.orientation.w = 1.0;
+        costmap_meta_pub->publish(meta);
+
+        std_msgs::msg::Float32MultiArray raw;
+        raw.layout.dim.resize(2);
+        raw.layout.dim[0].label = "height";
+        raw.layout.dim[0].size = static_cast<uint32_t>(height);
+        raw.layout.dim[0].stride = static_cast<uint32_t>(width * height);
+        raw.layout.dim[1].label = "width";
+        raw.layout.dim[1].size = static_cast<uint32_t>(width);
+        raw.layout.dim[1].stride = static_cast<uint32_t>(width);
+        raw.layout.data_offset = 0;
+        raw.data.resize(static_cast<size_t>(width * height));
+
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                raw.data[static_cast<size_t>(x + y * width)] = cost_grid.data(x, y);
+            }
+        }
+        costmap_raw_pub->publish(raw);
+    }
 
     // To receive IGVC waypoints
     void waypoints_callback(const cev_msgs::msg::Trajectory::SharedPtr msg) {
@@ -159,6 +216,44 @@ private:
             lane_wp.pose.theta = wp.theta;
             lane_centerline_.waypoints.push_back(lane_wp);
         }
+    }
+
+    void lane_cost_callback(const std_msgs::msg::Float32MultiArray::SharedPtr msg) {
+        if (!local_planner) {
+            return;
+        }
+        const size_t msg_len = msg ? msg->data.size() : 0;
+        if (!msg || msg_len < 6) {
+            RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                "lane_cost_weights message too short (size=%zu, expected >= 6)", msg_len);
+            return;
+        }
+
+        local_planner::LaneCostWeights weights = local_planner->get_cost_weights();
+
+        auto read_or = [&](size_t idx, double fallback) -> double {
+            if (idx < msg->data.size()) {
+                return static_cast<double>(msg->data[idx]);
+            }
+            return fallback;
+        };
+
+        weights.w_along_track = std::max(0.0, read_or(0, weights.w_along_track));
+        weights.w_cte = std::max(0.0, read_or(1, weights.w_cte));
+        weights.w_costmap = std::max(0.0, read_or(2, weights.w_costmap));
+        weights.obs_threshold = std::max(0.0, read_or(3, weights.obs_threshold));
+        weights.cte_threshold = std::max(0.0, read_or(4, weights.cte_threshold));
+        if (msg_len >= 7) {
+            weights.along_threshold = std::max(0.0, read_or(5, weights.along_threshold));
+            weights.target_vel = std::max(0.0, read_or(6, weights.target_vel));
+        } else {
+            weights.target_vel = std::max(0.0, read_or(5, weights.target_vel));
+        }
+
+        local_planner->set_cost_weights(weights);
+        RCLCPP_INFO_THROTTLE(this->get_logger(), *this->get_clock(), 1500,
+            "Updated lane cost weights: along=%.2f cte=%.2f costmap=%.2f obs_thr=%.2f cte_thr=%.2f along_thr=%.2f target_v=%.2f",
+            weights.w_along_track, weights.w_cte, weights.w_costmap, weights.obs_threshold, weights.cte_threshold, weights.along_threshold, weights.target_vel);
     }
 
     // main callback
@@ -301,6 +396,10 @@ private:
 
         std::cout << "Planning Update Time: " << avg_planning_time << "ms" << std::endl;
 
+        // if (avg_planning_time * 0.001 < local_planner->dt * 0.5){
+        //     std::cout << "dropped " << std::endl;
+        //     return;        
+        // }
         start_time = std::chrono::high_resolution_clock::now();
 
         // Update the last path
@@ -315,13 +414,30 @@ private:
         current_plan.waypoints.clear();
         current_plan.timestep = path.timestep;
 
-        for (const State& waypoint: path.waypoints) {
+        for (size_t i = 0; i < path.waypoints.size(); ++i) {
+            const State& waypoint = path.waypoints[i];
             cev_msgs::msg::Waypoint waypoint_msg;
             waypoint_msg.x = waypoint.pose.x;
             waypoint_msg.y = waypoint.pose.y;
             waypoint_msg.v = waypoint.vel;
             waypoint_msg.theta = waypoint.pose.theta;
             waypoint_msg.tau = waypoint.tau;
+            double along_track = std::numeric_limits<double>::quiet_NaN();
+            double cte = std::numeric_limits<double>::quiet_NaN();
+            double costmap_cost = std::numeric_limits<double>::quiet_NaN();
+            double cte_bad = std::numeric_limits<double>::quiet_NaN();
+            double obs_bad = std::numeric_limits<double>::quiet_NaN();
+            double along_track_penalty = std::numeric_limits<double>::quiet_NaN();
+            if (local_planner) {
+                local_planner->get_point_metrics(waypoint, i, along_track, cte, costmap_cost,
+                    cte_bad, obs_bad, along_track_penalty);
+            }
+            waypoint_msg.cte = static_cast<float>(cte);
+            waypoint_msg.along_track = static_cast<float>(along_track);
+            waypoint_msg.costmap_cost = static_cast<float>(costmap_cost);
+            waypoint_msg.cte_bad = static_cast<float>(cte_bad);
+            waypoint_msg.obs_bad = static_cast<float>(obs_bad);
+            waypoint_msg.along_track_penalty = static_cast<float>(along_track_penalty);
             current_plan.waypoints.push_back(waypoint_msg);
         }
 
@@ -344,6 +460,7 @@ private:
         }
 
         local_path_pub->publish(nav_path);
+        start_time = std::chrono::high_resolution_clock::now();
     }
 
     // generate costmap
@@ -369,7 +486,19 @@ private:
         }
 
         map_initialized = true;
+        
+        std::chrono::_V2::system_clock::time_point start_time_ =
+            std::chrono::high_resolution_clock::now();
         local_plan_cost = local_plan_cost_generator.generate_cost_map(grid);
+        auto end_time_ = std::chrono::high_resolution_clock::now();
+        std::cout << "Costmap Generation Time: "
+                  << std::chrono::duration_cast<std::chrono::milliseconds>(end_time_ - start_time_)
+                         .count()
+                  << "ms" << std::endl;
+
+        if (local_plan_cost_generator.has_grid()) {
+            publish_costmap_raw(local_plan_cost_generator.grid(), msg->header.stamp);
+        }
     }
 
     void target_callback(const cev_msgs::msg::Waypoint msg) {
@@ -457,6 +586,12 @@ private:
         waypoint_msg.theta = goal_state.pose.theta;
         waypoint_msg.v = 0.0;
         waypoint_msg.tau = 0.0;
+        waypoint_msg.cte = 0.0f;
+        waypoint_msg.along_track = 0.0f;
+        waypoint_msg.costmap_cost = 0.0f;
+        waypoint_msg.cte_bad = 0.0f;
+        waypoint_msg.obs_bad = 0.0f;
+        waypoint_msg.along_track_penalty = 0.0f;
 
         stop_plan.waypoints.push_back(waypoint_msg);
         stop_plan.timestep = 0.0;

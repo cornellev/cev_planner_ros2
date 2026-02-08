@@ -9,6 +9,7 @@
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "tf2/utils.h"
 #include <iostream>
+#include <limits>
 
 #include "local_planning/mpc.h"
 #include "global_planning/rrt.h"
@@ -317,6 +318,12 @@ private:
                 msg.v = 0;
                 msg.theta = target.pose.theta;
                 msg.tau = 0;
+                msg.cte = 0.0f;
+                msg.along_track = 0.0f;
+                msg.costmap_cost = 0.0f;
+                msg.cte_bad = 0.0f;
+                msg.obs_bad = 0.0f;
+                msg.along_track_penalty = 0.0f;
                 current_plan.waypoints.push_back(msg);
 
                 path_pub->publish(current_plan);
@@ -400,13 +407,19 @@ private:
             current_plan.waypoints.clear();
             current_plan.timestep = path.timestep;
 
-            for (State waypoint: path.waypoints) {
+            for (const State& waypoint: path.waypoints) {
                 cev_msgs::msg::Waypoint msg;
                 msg.x = waypoint.pose.x;
                 msg.y = waypoint.pose.y;
                 msg.v = waypoint.vel;
                 msg.theta = waypoint.pose.theta;
                 msg.tau = waypoint.tau;
+                msg.cte = std::numeric_limits<float>::quiet_NaN();
+                msg.along_track = std::numeric_limits<float>::quiet_NaN();
+                msg.costmap_cost = std::numeric_limits<float>::quiet_NaN();
+                msg.cte_bad = std::numeric_limits<float>::quiet_NaN();
+                msg.obs_bad = std::numeric_limits<float>::quiet_NaN();
+                msg.along_track_penalty = std::numeric_limits<float>::quiet_NaN();
                 current_plan.waypoints.push_back(msg);
             }
 
