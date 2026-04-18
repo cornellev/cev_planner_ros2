@@ -21,5 +21,11 @@ def generate_launch_description():
                     get_path("cev_planner_ros2", "config", "cev_planner.yaml")
                 ],
             ),
+            Node(
+                package="trajectory_follower",
+                executable="trajectory_follower_node",
+                name="trajectory_follower_node",
+                output="screen",
+            ),
         ]
     )

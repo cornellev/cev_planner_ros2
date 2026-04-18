@@ -32,12 +32,14 @@ def _locate_sim_script():
 
 
 def _locate_workspace_setup():
+    """Find the workspace root install/setup.bash (requires sibling src/ folder)."""
     launch_file = Path(__file__).resolve()
     for parent in launch_file.parents:
         setup_candidate = parent / "install" / "setup.bash"
-        if setup_candidate.exists():
+        src_candidate = parent / "src"
+        if setup_candidate.exists() and src_candidate.is_dir():
             return setup_candidate
-    raise FileNotFoundError("Unable to locate install/setup.bash relative to launch file.")
+    raise FileNotFoundError("Unable to locate workspace install/setup.bash relative to launch file.")
 
 
 def generate_launch_description():
@@ -48,9 +50,9 @@ def generate_launch_description():
         cmd=[
             "bash",
             "-lc",
-            "pkill -f trajectory_follower_node || true; "
-            "pkill -f planner_node || true; "
-            "pkill -f cev-ackermann-sim/sim.py || true",
+            "pkill -f '[t]rajectory_follower_node' || true; "
+            "pkill -f '[i]gvc_node' || true; "
+            "pkill -f '[c]ev-ackermann-sim/sim.py' || true",
         ],
         output="screen",
     )
@@ -60,7 +62,7 @@ def generate_launch_description():
         executable="igvc_node",
         name="cev_planner_ros2_node",
         output="screen",
-        parameters=[get_path("cev_planner_ros2", "config", "igvc.yaml")],
+        parameters=[get_path("cev_planner_ros2", "config", "cev_planner.yaml")],
     )
 
     trajectory_node = Node(
@@ -73,11 +75,12 @@ def generate_launch_description():
         cmd=[
             "bash",
             "-lc",
-            f"source {shlex.quote(str(setup_script))} && python3 {shlex.quote(str(sim_path))}",
+            f"source /opt/ros/humble/setup.bash && source {shlex.quote(str(setup_script))} && python3 {shlex.quote(str(sim_path))}",
         ],
         cwd=str(sim_path.parent),
         output="screen",
     )
+
 
     return LaunchDescription(
         [

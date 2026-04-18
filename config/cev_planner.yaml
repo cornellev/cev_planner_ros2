@@ -1,17 +1,27 @@
 planner_node:
   ros__parameters:
+    # pos constraints
     x: [-1000.0, 1000.0]
     y: [-1000.0, 1000.0]
-    tau: [-.34, .34]
-    vel: [-1.0, 1.0]
-    accel: [-.5, .5]
-    dtau: [-.20, .20]
+    # Steering angle constraints (radians): max_steering_angle from vehicle = 0.4 rad
+    tau: [-0.4, 0.4]
+    # Velocity constraints (m/s): max_speed from vehicle = 2.2352 m/s
+    vel: [-2.2352, 2.2352]
+    # Acceleration constraints (m/s2): max_acceleration from vehicle = 2.5 m/s2
+    accel: [-2.5, 2.5]
+    # Steering rate constraints (rad/s): wrong val
+    dtau: [-1.0, 1.0]
 
 cev_planner_ros2_node:
   ros__parameters:
+    # pos constraints
     x: [-1000.0, 1000.0]
     y: [-1000.0, 1000.0]
-    tau: [-.34, .34]
-    vel: [-1.0, 1.0]
-    accel: [-.5, .5]
-    dtau: [-.20, .20]
+    # Steering angle constraints (radians): max_steering_angle from vehicle = 0.4 rad
+    tau: [-0.4, 0.4]
+    # Velocity constraints (m/s): max_speed from vehicle = 2.2352 m/s
+    vel: [-2.2352, 2.2352]
+    # Acceleration constraints (m/s2): max_acceleration from vehicle = 2.5 m/s2
+    accel: [-2.5, 2.5]
+    # Steering rate constraints (rad/s): wrong val
+    dtau: [-1.0, 1.0]

@@ -27,22 +27,10 @@ include_directories(
 )
 
 # Source files in the main src folder
-set(SOURCES
-    src/planner_node.cpp
-)
+# planner_node.cpp is disabled — uses legacy costfinder code.
+# Use igvc_node instead.
 
-add_executable(planner_node ${SOURCES})
-add_executable(tf_test src/tf_test.cpp)
 add_executable(igvc_node src/igvc_node.cpp)
-
-ament_target_dependencies(planner_node
-    rclcpp
-    cev_msgs
-    nav_msgs
-    Eigen3
-    tf2_ros
-    tf2_geometry_msgs
-)
 
 ament_target_dependencies(igvc_node
     rclcpp
@@ -53,33 +41,9 @@ ament_target_dependencies(igvc_node
     tf2_geometry_msgs
 )
 
-ament_target_dependencies(tf_test
-    rclcpp
-    cev_msgs
-    nav_msgs
-    Eigen3
-    tf2_ros
-    tf2_geometry_msgs
-)
-
-target_link_libraries(planner_node
-    cev_planner
-)
-
-target_link_libraries(tf_test
-    cev_planner
-)
-
 target_link_libraries(igvc_node
     cev_planner
 )
-
-# Declare the executable
-install(TARGETS planner_node
-    DESTINATION lib/${PROJECT_NAME})
-
-install(TARGETS tf_test
-    DESTINATION lib/${PROJECT_NAME})
 
 install(TARGETS igvc_node
     DESTINATION lib/${PROJECT_NAME})

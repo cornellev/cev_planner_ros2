@@ -332,7 +332,7 @@ private:
             // std::cout << "I did not pass the target" << std::endl;
 
             while (dist < .75
-                   && current_waypoint_in_global
+                   && current_waypoint_in_global + 1
                           < global_path.waypoints.size()) {  // Progress waypoint
                 current_waypoint_in_global += 1;
                 prev_path_cost = 100000000;                  // Reset plan costs for new waypoint
